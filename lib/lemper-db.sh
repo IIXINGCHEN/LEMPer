@@ -25,6 +25,40 @@ if [[ "$(type -t requires_root)" != "function" ]]; then
     exit 1
 fi
 
+# Defensive fallback helpers in case this plugin is sourced outside the full
+# scripts/utils.sh context (bin/lemper-cli.sh is a lightweight dispatcher and
+# does not source utils.sh). The real implementations live in scripts/utils.sh
+# and take precedence when already defined.
+if [[ "$(type -t mysql_as)" != "function" ]]; then
+    function mysql_as() {
+        local _user="${1}"
+        local _pass="${2}"
+        shift 2
+        MYSQL_PWD="${_pass}" "${MYSQLCLI:-mariadb}" -u "${_user}" "$@"
+    }
+fi
+if [[ "$(type -t mysqldump_as)" != "function" ]]; then
+    function mysqldump_as() {
+        local _user="${1}"
+        local _pass="${2}"
+        shift 2
+        MYSQL_PWD="${_pass}" mysqldump -u "${_user}" "$@"
+    }
+fi
+if [[ "$(type -t validate_db_identifier)" != "function" ]]; then
+    function validate_db_identifier() {
+        [[ "${1}" =~ ^[A-Za-z0-9_]+$ ]]
+    }
+fi
+if [[ "$(type -t validate_db_host)" != "function" ]]; then
+    function validate_db_host() {
+        local _host="${1}"
+        [[ "${_host}" =~ ^[A-Za-z0-9.-]+$ ]] && return 0
+        [[ "${_host}" =~ ^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$ ]] && return 0
+        return 1
+    }
+fi
+
 ##
 # Main Functions
 ##
