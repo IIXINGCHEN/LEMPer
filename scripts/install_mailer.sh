@@ -168,7 +168,13 @@ function install_dovecot() {
     if [[ "${DO_INSTALL_DOVECOT}" == y* || "${DO_INSTALL_DOVECOT}" == Y* ]]; then
         echo "Installing Dovecot IMAP & POP3 Server..."
 
-        run apt-get install -q -y dovecot-core dovecot-common dovecot-imapd dovecot-pop3d
+        # dovecot-common was dropped in Ubuntu 24.04/Debian 13 (transitional
+        # before); only request it on releases where it still exists.
+        local DOVECOT_PKGS=("dovecot-core" "dovecot-imapd" "dovecot-pop3d")
+        if apt-cache show dovecot-common >/dev/null 2>&1; then
+            DOVECOT_PKGS+=("dovecot-common")
+        fi
+        run apt-get install -q -y "${DOVECOT_PKGS[@]}"
 
         # Configure Dovecot.
         echo "Configuring Dovecot IMAP & POP3 Server..."
@@ -325,7 +331,18 @@ function install_spf_dkim() {
     if [[ "${DO_INSTALL_SPFDKIM}" == y* || "${DO_INSTALL_SPFDKIM}" == Y* ]]; then
         echo "Installing Postfix Policy Agent and OpenDKIM..."
 
-        run apt-get install -q -y postfix-policyd-spf-python opendkim opendkim-tools
+        run apt-get install -q -y postfix-policyd-spf-python
+
+        # OpenDKIM may not be installable on all releases (e.g. Ubuntu 24.04
+        # Noble lacks libopendbx1); install if available, warn otherwise.
+        local OPENDKIM_AVAILABLE=false
+        if apt-cache show opendkim >/dev/null 2>&1 && \
+           apt-get install -q -y --dry-run opendkim opendkim-tools 2>/dev/null | grep -q "Conf opendkim"; then
+            run apt-get install -q -y opendkim opendkim-tools
+            OPENDKIM_AVAILABLE=true
+        else
+            warning "OpenDKIM is not installable on this release; SPF-only mode."
+        fi
 
         echo "Configuring SPF + DKIM..."
 
@@ -339,6 +356,8 @@ function install_spf_dkim() {
         run postconf -e 'policyd-spf_time_limit = 3600'
         run postconf -e 'smtpd_recipient_restrictions = permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination,reject_invalid_hostname,reject_non_fqdn_hostname,reject_non_fqdn_sender,reject_non_fqdn_recipient,reject_unknown_sender_domain,reject_rbl_client sbl.spamhaus.org,reject_rbl_client cbl.abuseat.org,check_policy_service unix:private/policyd-spf'
 
+        # Skip OpenDKIM config if not installed (SPF-only mode).
+        if [[ "${OPENDKIM_AVAILABLE}" == true ]]; then
         # Add postfix user to opendkim group.
         run adduser postfix opendkim
 
@@ -485,6 +504,7 @@ EOL
                     error "Something goes wrong with OpenDKIM + SPF installation."
                 fi
             fi
+        fi
         else
             info "OpenDKIM + SPF installed in dry run mode."
         fi

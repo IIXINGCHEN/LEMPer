@@ -38,7 +38,7 @@ server {
     # PHP-FPM status monitoring.
     location ~ ^/php-fpm_(status|ping)$ {
         include /etc/nginx/fastcgi_params;
-        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $fastcgi_script_name;
         allow all;
         auth_basic "Denied";
@@ -47,9 +47,9 @@ server {
         log_not_found off;
     }
 
-    # Default PHP handler (PHP 8.3)
+    # Default PHP handler (PHP 8.4)
     location ~ \.php$ {
-        set $php_version "8.3";
+        set $php_version "8.4";
         include /etc/nginx/includes/php_handler.conf;
     }
 
@@ -117,14 +117,14 @@ server {
         auth_basic_user_file /srv/.htpasswd;
 
         location ~ \.php$ {
-            set $php_version "8.3";
+            set $php_version "8.4";
             include /etc/nginx/includes/php_handler.conf;
         }
     }
 
     # Default PHP handler
     location ~ \.php$ {
-        set $php_version "8.3";
+        set $php_version "8.4";
         include /etc/nginx/includes/php_handler.conf;
     }
 

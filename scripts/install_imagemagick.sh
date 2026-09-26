@@ -65,8 +65,8 @@ function init_imagemagick_install() {
                     IMAGEMAGICK_FILENAME="ImageMagick.tar.xz"
                     IMAGEMAGICK_ZIP_URL="https://www.imagemagick.org/download/${IMAGEMAGICK_FILENAME}"
                 else
-                    IMAGEMAGICK_FILENAME="ImageMagick-${IMAGEMAGICK_VERSION}.tar.xz"
-                    IMAGEMAGICK_ZIP_URL="https://download.imagemagick.org/ImageMagick/download/releases/${IMAGEMAGICK_FILENAME}"
+                    IMAGEMAGICK_FILENAME="ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz"
+                    IMAGEMAGICK_ZIP_URL="$(gh_url "https://github.com/ImageMagick/ImageMagick/archive/refs/tags/${IMAGEMAGICK_VERSION}.tar.gz")"
                 fi
 
                 if curl -sLI "${IMAGEMAGICK_ZIP_URL}" | grep -q "HTTP/[.12]* [2].."; then

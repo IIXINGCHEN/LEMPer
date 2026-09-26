@@ -16,7 +16,7 @@ fi
 ##
 function download_nginx_source() {
     local VERSION="${1:-${NGINX_RELEASE_VERSION}}"
-    local NGINX_URL="https://nginx.org/download/nginx-${VERSION}.tar.gz"
+    local NGINX_URL="$(mirror_url nginx)/nginx-${VERSION}.tar.gz"
     local NGINX_TARBALL="${NGINX_BUILD_DIR}/nginx-${VERSION}.tar.gz"
 
     echo "Downloading Nginx ${VERSION}..."
@@ -201,25 +201,5 @@ function get_nginx_base_configure_args() {
     fi
 }
 
-##
-# Install Nginx from repository
-##
-function install_nginx_from_repo() {
-    local REPO_SOURCE="${1:-ondrej}"
+# NOTE: install_nginx_from_repo is defined in nginx_repo.sh (removed duplicate that shadowed it)
 
-    echo "Installing Nginx from ${REPO_SOURCE} repository..."
-
-    # Get extra module packages for this repo
-    local EXTRA_PKGS
-    EXTRA_PKGS=$(get_repo_extra_module_packages "${REPO_SOURCE}")
-
-    # Install nginx and modules
-    if [[ -n "${EXTRA_PKGS}" ]]; then
-        # shellcheck disable=SC2086
-        run apt-get install -q -y "${NGINX_PKGS[@]}" ${EXTRA_PKGS}
-    else
-        run apt-get install -q -y "${NGINX_PKGS[@]}"
-    fi
-
-    success "Nginx installed from repository successfully!"
-}

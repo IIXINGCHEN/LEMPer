@@ -56,14 +56,27 @@ function init_memcached_install() {
             1 | repo)
                 echo "Installing Memcached server from repository..."
 
-                run apt-get install -q -y \
-                    libevent-dev libsasl2-dev libmemcached-tools libmemcached11 libmemcachedutil2 memcached
+                # Ubuntu 24.04+/Debian 13+ renamed libmemcached packages with
+                # the 64-bit time_t suffix; resolve the right names per distro.
+                local MEMCACHED_PKGS=("libevent-dev" "libsasl2-dev" "libmemcached-tools")
+                if apt-cache show libmemcached11t64 >/dev/null 2>&1; then
+                    MEMCACHED_PKGS+=("libmemcached11t64" "libmemcachedutil2t64")
+                else
+                    MEMCACHED_PKGS+=("libmemcached11" "libmemcachedutil2")
+                fi
+                MEMCACHED_PKGS+=("memcached")
+                run apt-get install -q -y "${MEMCACHED_PKGS[@]}"
             ;;
             2 | source)
                 echo "Installing Memcached server from source..."
 
-                run apt-get install -q -y \
-                    libevent-dev libsasl2-dev libmemcached-tools libmemcached11 libmemcachedutil2
+                local MEMCACHED_DEV_PKGS=("libevent-dev" "libsasl2-dev" "libmemcached-tools")
+                if apt-cache show libmemcached11t64 >/dev/null 2>&1; then
+                    MEMCACHED_DEV_PKGS+=("libmemcached11t64" "libmemcachedutil2t64")
+                else
+                    MEMCACHED_DEV_PKGS+=("libmemcached11" "libmemcachedutil2")
+                fi
+                run apt-get install -q -y "${MEMCACHED_DEV_PKGS[@]}"
 
                 local CURRENT_DIR && \
                 CURRENT_DIR=$(pwd)
@@ -83,14 +96,40 @@ function init_memcached_install() {
                 #fi
 
                 # Memcached source.
-                if [[ "${MEMCACHED_VERSION}" == "latest" || "${MEMCACHED_VERSION}" == "stable" ]]; then
-                    MEMCACHED_DOWNLOAD_URL="http://memcached.org/latest"
-                else
-                    MEMCACHED_DOWNLOAD_URL="https://memcached.org/files/memcached-${MEMCACHED_VERSION}.tar.gz"
+                # Pinned SHA256 checksums for Memcached releases.
+                # Upstream publishes no checksum/signature file, so source builds
+                # are fail-closed: only versions listed here may be compiled.
+                # To adopt a newer release, add its SHA256 below and bump
+                # MEMCACHED_PINNED_LATEST.
+                local MEMCACHED_PINNED_LATEST="1.6.45"
+                declare -A MEMCACHED_SHA256=(
+                    ["1.6.43"]="8042ee26e004efa0db41ca4a7c713f759c3280c2f8bee438579f13de1e509435"
+                    ["1.6.44"]="c41a9d2713dfc56b5f4fa0075b2751973ea840c1f1ab8d6bfed08a1848938368"
+                    ["1.6.45"]="d362c64e6d8d5287153501eabf7c85b4a761432fbf53f5d7b085d0bb1653c1dd"
+                )
+
+                local MEMCACHED_SRC_VERSION="${MEMCACHED_VERSION}"
+                if [[ "${MEMCACHED_SRC_VERSION}" == "latest" || "${MEMCACHED_SRC_VERSION}" == "stable" ]]; then
+                    MEMCACHED_SRC_VERSION="${MEMCACHED_PINNED_LATEST}"
                 fi
 
+                if [[ -z "${MEMCACHED_SHA256[${MEMCACHED_SRC_VERSION}]:-}" ]]; then
+                    error "No pinned SHA256 checksum for Memcached ${MEMCACHED_SRC_VERSION}; refusing unverified source build."
+                    error "Add the checksum to MEMCACHED_SHA256 in install_memcached.sh, or use the repo installer instead."
+                    return 1
+                fi
+
+                # Always HTTPS (the old http://memcached.org/latest was plaintext).
+                MEMCACHED_DOWNLOAD_URL="https://www.memcached.org/files/memcached-${MEMCACHED_SRC_VERSION}.tar.gz"
+
                 if curl -sLI "${MEMCACHED_DOWNLOAD_URL}" | grep -q "HTTP/[.12]* [2].."; then
-                    run curl -sSL -o memcached.tar.gz "${MEMCACHED_DOWNLOAD_URL}" && \
+                    run curl -sSL -o memcached.tar.gz "${MEMCACHED_DOWNLOAD_URL}"
+
+                    # Verify integrity before extracting (fail closed).
+                    if [[ "${DRYRUN}" != true ]]; then
+                        verify_sha256 "memcached.tar.gz" "${MEMCACHED_SHA256[${MEMCACHED_SRC_VERSION}]}" || return 1
+                    fi
+
                     run tar -zxf memcached.tar.gz && \
                     run cd memcached-* && \
 
@@ -197,7 +236,7 @@ EOL
                     save_config -e "MEMCACHED_SASL=${MEMCACHED_SASL}\nMEMCACHED_USERNAME=${MEMCACHED_USERNAME}\nMEMCACHED_PASSWORD=${MEMCACHED_PASSWORD}\nMEMCACHED_INSTANCE=memcache"
 
                     # Save log.
-                    save_log -e "Memcached SASL auth is enabled, below is your default auth credential.\nUsername: ${MEMCACHED_USERNAME}, password: ${MEMCACHED_PASSWORD}\nSave this credential and use it to authenticate your Memcached connection."
+                    save_log -e "Memcached SASL auth is enabled.\nAuth username: ${MEMCACHED_USERNAME}\nCredentials stored in /etc/lemper/lemper.conf (mode 0600, root-only)."
                 else
                     info "Memcahed SASL-auth configured in dry run mode."
                 fi

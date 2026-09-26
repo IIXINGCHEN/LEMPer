@@ -45,7 +45,15 @@ function mariadb_remove_config() {
 }
 
 function init_mariadb_removal() {
-    MYSQL_VERSION=${MYSQL_VERSION:-"10.5"}
+    # Detect the actually installed major version from dpkg instead of
+    # assuming a stale default; fall back to the installer's default only
+    # when nothing is installed yet.
+    if [[ -z "${MYSQL_VERSION:-}" ]]; then
+        MYSQL_VERSION=$(dpkg-query -W -f='${Package}\n' 2>/dev/null | \
+            grep -oE '^mariadb-server-[0-9]+\.[0-9]+$' | head -n 1 | \
+            sed -E 's/^mariadb-server-//')
+        MYSQL_VERSION=${MYSQL_VERSION:-"12.3"}
+    fi
 
     # Stop MariaDB mysql server process.
     if [[ $(pgrep -c mariadb) -gt 0 ]]; then
@@ -57,8 +65,10 @@ function init_mariadb_removal() {
     if dpkg-query -l | awk '/mariadb/ { print $2 }' | grep -qwE "^mariadb-server-${MYSQL_VERSION}"; then
         echo "Found MariaDB ${MYSQL_VERSION} packages installation, removing..."
 
-        # Remove MariaDB server.
-        run apt-get purge -q -y libmariadb-dev libmariadb3 libmariadbclient18 mariadb-client mariadb-client-core \
+        # Remove MariaDB server: the versioned server package plus the
+        # metapackages, with auto-remove for pulled-in dependencies.
+        run apt-get purge -q -y --auto-remove "mariadb-server-${MYSQL_VERSION}" \
+            libmariadb-dev libmariadb3 libmariadbclient18 mariadb-client mariadb-client-core \
             mariadb-common mariadb-server mariadb-server-core mariadb-backup
 
         # Remove config.

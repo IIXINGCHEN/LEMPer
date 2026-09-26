@@ -105,9 +105,9 @@ function cmd_account_access() {
         DBPRIVILEGES="ALL PRIVILEGES"
     fi
 
-    if "${MYSQLCLI}" -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SHOW DATABASES;" | grep -qwE "${DBNAME}"; then
+    if mysql_as root "${MYSQL_ROOT_PASSWORD}" -e "SHOW DATABASES;" | grep -qwE "${DBNAME}"; then
         echo "Grants database '${DBNAME}' privileges to '${DBUSER}'@'${DBHOST}'"
-        run "${MYSQLCLI}" -u root -p"${MYSQL_ROOT_PASSWORD}" -e "GRANT ${DBPRIVILEGES} ON ${DBNAME}.* TO '${DBUSER}'@'${DBHOST}'; FLUSH PRIVILEGES;"
+        run mysql_as root "${MYSQL_ROOT_PASSWORD}" -e "GRANT ${DBPRIVILEGES} ON ${DBNAME}.* TO '${DBUSER}'@'${DBHOST}'; FLUSH PRIVILEGES;"
     else
         fail "The specified database '${DBNAME}' does not exist."
     fi
@@ -122,14 +122,14 @@ function cmd_account_create() {
         DBPASS=${DBPASS:-"$(openssl rand -base64 64 | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)"}
 
         # Create database account.
-        if "${MYSQLCLI}" -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT User FROM mysql.user WHERE user='${DBUSER}';" | grep -qwE "${DBUSER}"; then
+        if mysql_as root "${MYSQL_ROOT_PASSWORD}" -e "SELECT User FROM mysql.user WHERE user='${DBUSER}';" | grep -qwE "${DBUSER}"; then
             fail "MySQL account ${DBUSER} is already exist. Please use another one!"
         else
             echo "Creating new MySQL account '${DBUSER}'@'${DBHOST}' using password ${DBPASS}..."
 
-            run "${MYSQLCLI}" -u root -p"${MYSQL_ROOT_PASSWORD}" -e "CREATE USER '${DBUSER}'@'${DBHOST}' IDENTIFIED BY '${DBPASS}';"
+            run mysql_as root "${MYSQL_ROOT_PASSWORD}" -e "CREATE USER '${DBUSER}'@'${DBHOST}' IDENTIFIED BY '${DBPASS}';"
 
-            if "${MYSQLCLI}" -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT User FROM mysql.user WHERE user='${DBUSER}';" | grep -qwE "${DBUSER}"; then
+            if mysql_as root "${MYSQL_ROOT_PASSWORD}" -e "SELECT User FROM mysql.user WHERE user='${DBUSER}';" | grep -qwE "${DBUSER}"; then
                 success "MySQL account ${DBUSER} has been created."
                 
                 if [[ ${VERBOSE} == true ]]; then
@@ -156,7 +156,7 @@ function cmd_account_delete() {
         local SQL_QUERY="DROP USER '${DBUSER}'@'${DBHOST}';"
 
         if [[ "${DRYRUN}" != true ]]; then
-            if "${MYSQLCLI}" -u root -p"${MYSQL_ROOT_PASSWORD}" -e "${SQL_QUERY}"; then
+            if mysql_as root "${MYSQL_ROOT_PASSWORD}" -e "${SQL_QUERY}"; then
                 success "The database's account '${DBUSER}'@'${DBHOST}' has been deleted."
             else
                 fail "Unable to delete database account '${DBUSER}'@'${DBHOST}'."
@@ -186,7 +186,7 @@ function cmd_account_passwd() {
     local SQL_QUERY="UPDATE mysql.user SET Password=PASSWORD('${DBPASS2}') WHERE USER='${DBUSER}' AND Host='${DBHOST}';"
 
     if [[ "${DRYRUN}" != true ]]; then
-        if "${MYSQLCLI}" -u root -p"${MYSQL_ROOT_PASSWORD}" -e "${SQL_QUERY}"; then
+        if mysql_as root "${MYSQL_ROOT_PASSWORD}" -e "${SQL_QUERY}"; then
             success "Password for account '${DBUSER}'@'${DBHOST}' has been updated to '${DBPASS2}'."
         else
             fail "Unable to update password for '${DBUSER}'@'${DBHOST}'."
@@ -220,7 +220,7 @@ function cmd_account_rename() {
         if [[ "${DBUSER}" = "root" || "${DBUSER}" = "lemper" ]]; then
             fail "You are not allowed to rename this account."
         else
-            if "${MYSQLCLI}" -u root -p"${DBROOT_PASS}" -e "${SQL_QUERY}"; then
+            if mysql_as root "${DBROOT_PASS}" -e "${SQL_QUERY}"; then
                 success "Database account '${DBUSER}'@'${DBHOST}' has been renamed to '${DBUSER2}'@'${DBHOST2}'."
             else
                 fail "Unable to rename database account '${DBUSER}'@'${DBHOST}'."
@@ -241,7 +241,7 @@ function cmd_account_users() {
                 
     echo "List all existing database users."
 
-    run "${MYSQLCLI}" -u "${DBUSER}" -p"${DBPASS}" -e "SELECT user,host FROM mysql.user;"
+    run mysql_as "${DBUSER}" "${DBPASS}" -e "SELECT user,host FROM mysql.user;"
 
     exit 0
 }
@@ -430,6 +430,25 @@ function db_operations() {
         DRYRUN=${DRYRUN:-false}
         USEROOT=${USEROOT:-false}
 
+        # Validate identifiers before they reach SQL (fail closed).
+        # DBNAME/DBUSER become bare or quoted identifiers in CREATE/GRANT/DROP.
+        for _id in "${DBNAME}" "${DBUSER}"; do
+            if [[ -n "${_id}" ]] && ! validate_db_identifier "${_id}"; then
+                fail "Invalid database identifier '${_id}': only letters, digits and underscore are allowed."
+            fi
+        done
+        # DBHOST may be a hostname or IP; DBPORT must be numeric.
+        if ! validate_db_host "${DBHOST}"; then
+            fail "Invalid database host '${DBHOST}'."
+        fi
+        if [[ -n "${DBPORT}" ]] && ! [[ "${DBPORT}" =~ ^[0-9]{1,5}$ ]]; then
+            fail "Invalid database port '${DBPORT}'."
+        fi
+        # DBPRIVILEGES is interpolated into GRANT; restrict to privilege keywords.
+        if [[ -n "${DBPRIVILEGES}" ]] && ! [[ "${DBPRIVILEGES}" =~ ^[A-Za-z_,\ ]+$ ]]; then
+            fail "Invalid database privileges '${DBPRIVILEGES}'."
+        fi
+
         # Parse and export extra arguments.
         EXTRA_ARGS=${EXTRA_ARGS:-""}
         if [ -n "${EXTRA_ARGS}" ]; then
@@ -478,16 +497,16 @@ function db_operations() {
                 # Create database name.
                 echo "Creating new MySQL database '${DBNAME}' grants access to '${DBUSER}'@'${DBHOST}'..."
 
-                until ! "${MYSQLCLI}" -u root -p"${DBPASS}" -e "SHOW DATABASES;" | grep -qwE "${DBNAME}"; do
+                until ! mysql_as root "${DBPASS}" -e "SHOW DATABASES;" | grep -qwE "${DBNAME}"; do
                     echo "Database '${DBNAME}' already exist, try another one..."
                     DBNAME="${LEMPER_USERNAME}_db$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1)"
                     echo "New auto-generated MySQL database '${DBNAME}'"
                 done
 
                 local SQL_QUERY="CREATE DATABASE ${DBNAME}; GRANT ALL PRIVILEGES ON ${DBNAME}.* TO '${DBUSER}'@'${DBHOST}'; FLUSH PRIVILEGES;"
-                run "${MYSQLCLI}" -u root -p"${DBPASS}" -e "${SQL_QUERY}"
+                run mysql_as root "${DBPASS}" -e "${SQL_QUERY}"
 
-                if "${MYSQLCLI}" -u root -p"${DBPASS}" -e "SHOW DATABASES LIKE '${DBNAME}';" | grep -qwE "${DBNAME}"; then
+                if mysql_as root "${DBPASS}" -e "SHOW DATABASES LIKE '${DBNAME}';" | grep -qwE "${DBNAME}"; then
                     success "MySQL database '${DBNAME}' has been created and granted to '${DBUSER}'@'${DBHOST}'."
                 else
                     fail "Failed creating database '${DBNAME}'."
@@ -503,9 +522,9 @@ function db_operations() {
 
                 if [[ -z "${DBPASS}" || "${USEROOT}" == true ]]; then
                     [[ -z "${DBPASS}" ]] && DBPASS="${MYSQL_ROOT_PASSWORD}"
-                    DATABASES=$("${MYSQLCLI}" -u root -p"${DBPASS}" -h "${DBHOST}" -P "${DBPORT}" -e "SELECT Db,Host FROM mysql.db WHERE User='${DBUSER}';")
+                    DATABASES=$(mysql_as root "${DBPASS}" -h "${DBHOST}" -P "${DBPORT}" -e "SELECT Db,Host FROM mysql.db WHERE User='${DBUSER}';")
                 else
-                    DATABASES=$("${MYSQLCLI}" -u "${DBUSER}" -p"${DBPASS}" -h "${DBHOST}" -P "${DBPORT}" -e "SHOW DATABASES;" | grep -vE "Database|mysql|*_schema")
+                    DATABASES=$(mysql_as "${DBUSER}" "${DBPASS}" -h "${DBHOST}" -P "${DBPORT}" -e "SHOW DATABASES;" | grep -vE "Database|mysql|*_schema")
                 fi
 
                 if [[ -n "${DATABASES}" ]]; then
@@ -545,12 +564,12 @@ function db_operations() {
 
                 [[ "${DBUSER}" = "root" && -z "${DBPASS}" ]] && DBPASS="${MYSQL_ROOT_PASSWORD}"
 
-                if "${MYSQLCLI}" -u root -p"${DBPASS}" -e "SHOW DATABASES;" | grep -qwE "${DBNAME}"; then
+                if mysql_as root "${DBPASS}" -e "SHOW DATABASES;" | grep -qwE "${DBNAME}"; then
                     echo "Deleting database ${DBNAME}..."
 
-                    run "${MYSQLCLI}" -u "${DBUSER}" -p"${DBPASS}" -e "DROP DATABASE ${DBNAME};"
+                    run mysql_as "${DBUSER}" "${DBPASS}" -e "DROP DATABASE ${DBNAME};"
 
-                    if ! "${MYSQLCLI}" -u root -p"${DBPASS}" -e "SHOW DATABASES LIKE '${DBNAME}';" | grep -qwE "${DBNAME}"; then
+                    if ! mysql_as root "${DBPASS}" -e "SHOW DATABASES LIKE '${DBNAME}';" | grep -qwE "${DBNAME}"; then
                         success "Database '${DBNAME}' has been dropped."
                     else
                         fail "Failed deropping database '${DBNAME}'."
@@ -578,8 +597,8 @@ function db_operations() {
                 echo "Exporting database ${DBNAME}'s tables..."
 
                 if [[ -n $(command -v mysqldump) ]]; then
-                    if "${MYSQLCLI}" -u "${DBUSER}" -p"${DBPASS}" -e "SHOW DATABASES;" | grep -qwE "${DBNAME}"; then
-                        run mysqldump -u "${DBUSER}" -p"${DBPASS}" --databases "${DBNAME}" > "${DBFILE}"
+                    if mysql_as "${DBUSER}" "${DBPASS}" -e "SHOW DATABASES;" | grep -qwE "${DBNAME}"; then
+                        run mysqldump_as "${DBUSER}" "${DBPASS}" --databases "${DBNAME}" > "${DBFILE}"
 
                         if [[ -f "${DBFILE}" ]]; then
                             success "Database '${DBNAME}' has been successfully exported to '${DBFILE}'."
@@ -610,8 +629,8 @@ function db_operations() {
                 if [[ -n "${DBFILE}" && -e "${DBFILE}" ]]; then
                     echo "Importing database ${DBNAME}'s tables..."
 
-                    if "${MYSQLCLI}" -u "${DBUSER}" -p"${DBPASS}" -e "SHOW DATABASES;" | grep -qwE "${DBNAME}"; then
-                        run "${MYSQLCLI}" -u "${DBUSER}" -p"${DBPASS}" "${DBNAME}" < "${DBFILE}"
+                    if mysql_as "${DBUSER}" "${DBPASS}" -e "SHOW DATABASES;" | grep -qwE "${DBNAME}"; then
+                        run mysql_as "${DBUSER}" "${DBPASS}" "${DBNAME}" < "${DBFILE}"
                         success "Database file '${DBFILE}' has been successfully imported to '${DBNAME}'."
                     else
                         fail "The specified database '${DBNAME}' does not exist."
@@ -638,7 +657,7 @@ function db_operations() {
                 local SQL_QUERY=${DBQUERY:-""}
 
                 if [[ "${DRYRUN}" != true ]]; then
-                    if "${MYSQLCLI}" -u "${DBUSER}" -p"${DBPASS}" -D "${DBNAME}" -e "${SQL_QUERY}"; then
+                    if mysql_as "${DBUSER}" "${DBPASS}" -D "${DBNAME}" -e "${SQL_QUERY}"; then
                         success "The SQL query was applied to '${DBNAME}' using the account '${DBUSER}'@'${DBHOST}'."
                     else
                         fail "Failed to execute the SQL query on '${DBNAME}' using the account '${DBUSER}'@'${DBHOST}'."

@@ -22,28 +22,28 @@ CURRENT_DIR=$(pwd)
 
 # Include nginx modules
 # shellcheck source=scripts/nginx/nginx_common.sh
-. "${BASE_DIR}/nginx/nginx_common.sh"
+. "${BASE_DIR}/scripts/nginx/nginx_common.sh"
 # shellcheck source=scripts/nginx/nginx_repo.sh
-. "${BASE_DIR}/nginx/nginx_repo.sh"
+. "${BASE_DIR}/scripts/nginx/nginx_repo.sh"
 # shellcheck source=scripts/nginx/nginx_ssl_builders.sh
-. "${BASE_DIR}/nginx/nginx_ssl_builders.sh"
+. "${BASE_DIR}/scripts/nginx/nginx_ssl_builders.sh"
 # shellcheck source=scripts/nginx/nginx_extra_modules.sh
-. "${BASE_DIR}/nginx/nginx_extra_modules.sh"
+. "${BASE_DIR}/scripts/nginx/nginx_extra_modules.sh"
 # shellcheck source=scripts/nginx/nginx_module_config.sh
-. "${BASE_DIR}/nginx/nginx_module_config.sh"
+. "${BASE_DIR}/scripts/nginx/nginx_module_config.sh"
 # shellcheck source=scripts/nginx/nginx_post_install.sh
-. "${BASE_DIR}/nginx/nginx_post_install.sh"
+. "${BASE_DIR}/scripts/nginx/nginx_post_install.sh"
 # shellcheck source=scripts/nginx/nginx_ssl_cert.sh
-. "${BASE_DIR}/nginx/nginx_ssl_cert.sh"
+. "${BASE_DIR}/scripts/nginx/nginx_ssl_cert.sh"
 # shellcheck source=scripts/nginx/nginx_build.sh
-. "${BASE_DIR}/nginx/nginx_build.sh"
+. "${BASE_DIR}/scripts/nginx/nginx_build.sh"
 
 ##
 # Select installer method (interactive or automatic)
 ##
 function select_install_method() {
     local SELECTED_INSTALLER=${NGINX_INSTALLER:-"source"}
-    local SELECTED_REPO="ondrej"
+    local SELECTED_REPO="${NGINX_REPO_SRC:-official}"
 
     if [[ "${AUTO_INSTALL}" == true ]]; then
         if [[ -z "${NGINX_INSTALLER}" || "${NGINX_INSTALLER}" == "none" ]]; then
@@ -106,7 +106,7 @@ function determine_nginx_version() {
     esac
 
     # Fallback
-    [[ -z "${VERSION}" ]] && VERSION="1.24.0"
+    [[ -z "${VERSION}" ]] && VERSION="1.30.5"
     echo "${VERSION}"
 }
 
@@ -127,6 +127,8 @@ function init_nginx_install() {
                 # Add repository
                 if [[ "${NGINX_REPO_SOURCE}" == "ondrej" ]]; then
                     add_nginx_repo_ondrej
+                elif [[ "${NGINX_REPO_SOURCE}" == "official" || "${NGINX_REPO_SOURCE}" == "nginx" ]]; then
+                    add_nginx_repo_official
                 else
                     add_nginx_repo_myguard
                 fi

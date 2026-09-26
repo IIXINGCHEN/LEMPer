@@ -58,7 +58,7 @@ function init_fail2ban_install() {
             2 | "source")
                 echo "Installing Fail2ban from source..."
 
-                FAIL2BAN_VERSION=${FAIL2BAN_VERSION:-"1.1.0"}
+                FAIL2BAN_VERSION=${FAIL2BAN_VERSION:-"1.1.1"}
 
                 if [[ "${FAIL2BAN_VERSION}" == "latest" ]]; then
                     FAIL2BAN_VERSION="master"
@@ -70,7 +70,7 @@ function init_fail2ban_install() {
 
                 # Install from source
                 # https://github.com/fail2ban/fail2ban
-                fail2ban_download_link="https://github.com/fail2ban/fail2ban/archive/${FAIL2BAN_VERSION}.tar.gz"
+                fail2ban_download_link="$(gh_url "https://github.com/fail2ban/fail2ban/archive/${FAIL2BAN_VERSION}.tar.gz")"
 
                 if curl -sLI "${fail2ban_download_link}" | grep -q "HTTP/[.12]* [2].."; then
                     run curl -sSL -o fail2ban.tar.gz "${fail2ban_download_link}" && \

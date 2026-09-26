@@ -215,7 +215,7 @@ function install_ufw() {
         fi
 
         # Open FTP ports.
-        if [[ "${IINSTALL_FTP_SERVER}" == true ]]; then
+        if [[ "${INSTALL_FTP_SERVER}" == true ]]; then
             FTP_MIN_PORT=${FTP_MIN_PORT:-45000}
             FTP_MAX_PORT=${FTP_MAX_PORT:-45099}
 
@@ -406,9 +406,9 @@ function install_apf() {
 
     echo "Installing APF+BFD firewall..."
 
-    if curl -sLI "https://github.com/rfxn/advanced-policy-firewall/archive/${APF_VERSION}.tar.gz" \
+    if curl -sLI "$(gh_url "https://github.com/rfxn/advanced-policy-firewall/archive/${APF_VERSION}.tar.gz")" \
     | grep -q "HTTP/[.12]* [2].."; then
-        run curl -sSL -o "${APF_VERSION}.tar.gz" "https://github.com/rfxn/advanced-policy-firewall/archive/${APF_VERSION}.tar.gz" && \
+        run curl -sSL -o "${APF_VERSION}.tar.gz" "$(gh_url "https://github.com/rfxn/advanced-policy-firewall/archive/${APF_VERSION}.tar.gz")" && \
         run tar -xf "${APF_VERSION}.tar.gz" && \
         run cd advanced-policy-firewall-*/ && \
         run bash install.sh && \
@@ -564,6 +564,39 @@ Any other iptables based firewall will be removed otherwise they will conflict."
 }
 
 ##
+# Install unattended-upgrades for automatic security updates.
+#
+function install_auto_updates() {
+    echo -e "\nAutomatic Security Updates\n"
+
+    if [[ "${AUTO_INSTALL}" == true ]]; then
+        DO_AUTO_UPDATES="y"
+    fi
+
+    while [[ ${DO_AUTO_UPDATES} != "y" && ${DO_AUTO_UPDATES} != "n" ]]; do
+        read -rp "Enable automatic security updates (unattended-upgrades)? [y/n]: " -i y -e DO_AUTO_UPDATES
+    done
+
+    if [[ "${DO_AUTO_UPDATES}" == y* && "${ENABLE_AUTO_UPDATES:-true}" == true ]]; then
+        echo "Installing unattended-upgrades..."
+
+        run apt-get install -q -y unattended-upgrades apt-listchanges
+
+        # The shipped 50unattended-upgrades already covers
+        # ${distro_id}:${distro_codename}-security; just make sure the
+        # timer is enabled.
+        if [[ "${DRYRUN}" != true ]]; then
+            systemctl enable --now unattended-upgrades.service 2>/dev/null || \
+                warning "Could not enable unattended-upgrades.service."
+        fi
+
+        success "Automatic security updates enabled."
+    else
+        info "Automatic security updates skipped."
+    fi
+}
+
+##
 # Initialize server security.
 #
 function init_secure_server() {
@@ -578,6 +611,7 @@ function init_secure_server() {
     if [[ "${DO_SECURE_SERVER}" == Y* || "${DO_SECURE_SERVER}" == y* ]]; then
         securing_ssh "$@"
         install_firewall "$@"
+        install_auto_updates "$@"
 
         if [[ ${SSH_PORT} -ne 22 ]]; then
             echo -e "\nYou're running SSH server with modified configuration, restart to apply your changes.

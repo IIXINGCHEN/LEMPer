@@ -58,17 +58,20 @@ function create_account() {
             chmod 0600 /srv/.htpasswd
             chown www-data:www-data /srv/.htpasswd
 
-            # Generate password hash.
-            if [[ -n $(command -v mkpasswd) ]]; then
-                PASSWORD_HASH=$(mkpasswd --method=sha-256 "${PASSWORD}")
+            # Generate password hash. The password is piped via stdin so it
+            # never appears in the process argument list.
+            if [[ -n $(command -v mkpasswd) ]] && mkpasswd --help 2>&1 | grep -q -- --stdin; then
+                PASSWORD_HASH=$(printf '%s' "${PASSWORD}" | mkpasswd --method=sha-256 --stdin)
+                sed -i "/^${USERNAME}:/d" /srv/.htpasswd
+                echo "${USERNAME}:${PASSWORD_HASH}" >> /srv/.htpasswd
+            elif [[ -n $(command -v openssl) ]]; then
+                PASSWORD_HASH=$(printf '%s' "${PASSWORD}" | openssl passwd -6 -stdin)
                 sed -i "/^${USERNAME}:/d" /srv/.htpasswd
                 echo "${USERNAME}:${PASSWORD_HASH}" >> /srv/.htpasswd
             elif [[ -n $(command -v htpasswd) ]]; then
                 htpasswd -b /srv/.htpasswd "${USERNAME}" "${PASSWORD}"
             else
-                PASSWORD_HASH=$(openssl passwd -1 "${PASSWORD}")
-                sed -i "/^${USERNAME}:/d" /srv/.htpasswd
-                echo "${USERNAME}:${PASSWORD_HASH}" >> /srv/.htpasswd
+                fail "No password hashing tool available (openssl, mkpasswd, or htpasswd required)."
             fi
 
             # Save config.

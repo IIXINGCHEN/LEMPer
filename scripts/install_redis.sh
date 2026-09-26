@@ -28,10 +28,10 @@ function add_redis_repo() {
     case "${DISTRIB_NAME}" in
         debian | ubuntu)
             if [[ ! -f "/etc/apt/sources.list.d/redis-${RELEASE_NAME}.list" ]]; then
-                run bash -c "curl -fsSL https://packages.redis.io/gpg | gpg --dearmor --yes -o /usr/share/keyrings/redis-${RELEASE_NAME}.gpg" && \
+                run bash -c "curl -fsSL ${REDIS_REPO_BASE:-https://packages.redis.io}/gpg | gpg --dearmor --yes -o /usr/share/keyrings/redis-${RELEASE_NAME}.gpg" && \
                 run chmod 644 "/usr/share/keyrings/redis-${RELEASE_NAME}.gpg" && \
                 run touch "/etc/apt/sources.list.d/redis-${RELEASE_NAME}.list" && \
-                run bash -c "echo 'deb [signed-by=/usr/share/keyrings/redis-${RELEASE_NAME}.gpg] https://packages.redis.io/deb ${RELEASE_NAME} main' | tee /etc/apt/sources.list.d/redis-${RELEASE_NAME}.list" && \
+                run bash -c "echo 'deb [signed-by=/usr/share/keyrings/redis-${RELEASE_NAME}.gpg] ${REDIS_REPO_BASE:-https://packages.redis.io}/deb ${RELEASE_NAME} main' | tee /etc/apt/sources.list.d/redis-${RELEASE_NAME}.list" && \
                 run apt-get update --allow-releaseinfo-change -q -y
             else
                 info "Redis repository already exists."
@@ -91,14 +91,39 @@ function init_redis_install {
                 CURRENT_DIR=$(pwd)
                 run cd "${BUILD_DIR}" || error "Cannot change directory to ${BUILD_DIR}"
 
-                if [[ "${REDIS_VERSION}" == "latest" || "${REDIS_VERSION}" == "stable" ]]; then
-                    REDIS_DOWNLOAD_URL="http://download.redis.io/redis-stable.tar.gz"
-                else
-                    REDIS_DOWNLOAD_URL="http://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz"
+                # Pinned SHA256 checksums for Redis releases.
+                # Upstream publishes no checksum/signature file, so source builds
+                # are fail-closed: only versions listed here may be compiled.
+                # To adopt a newer release, add its SHA256 below and bump
+                # REDIS_PINNED_LATEST.
+                local REDIS_PINNED_LATEST="8.8.3"
+                declare -A REDIS_SHA256=(
+                    ["8.8.1"]="1d1e423c9c808de3cb01dd3300d2b8d305b7691382e31a847ec17b66d3157477"
+                    ["8.8.2"]="328ccd441d5ef22e00c81cbcd088007887fdfd2fabb32c663998f29033acdb25"
+                    ["8.8.3"]="13dbcfc6107ab8b6ab2a4f4582678143d5b2fd03ba38611b810359564cfe8a3c"
+                )
+
+                local REDIS_SRC_VERSION="${REDIS_VERSION}"
+                if [[ "${REDIS_SRC_VERSION}" == "latest" || "${REDIS_SRC_VERSION}" == "stable" ]]; then
+                    REDIS_SRC_VERSION="${REDIS_PINNED_LATEST}"
                 fi
 
+                if [[ -z "${REDIS_SHA256[${REDIS_SRC_VERSION}]:-}" ]]; then
+                    error "No pinned SHA256 checksum for Redis ${REDIS_SRC_VERSION}; refusing unverified source build."
+                    error "Add the checksum to REDIS_SHA256 in install_redis.sh, or use the repo installer instead."
+                    return 1
+                fi
+
+                REDIS_DOWNLOAD_URL="$(mirror_url redis_dl)/releases/redis-${REDIS_SRC_VERSION}.tar.gz"
+
                 if curl -sLI "${REDIS_DOWNLOAD_URL}" | grep -q "HTTP/[.12]* [2].."; then
-                    run curl -sSL -o redis.tar.gz "${REDIS_DOWNLOAD_URL}" && \
+                    run curl -sSL -o redis.tar.gz "${REDIS_DOWNLOAD_URL}"
+
+                    # Verify integrity before extracting (fail closed).
+                    if [[ "${DRYRUN}" != true ]]; then
+                        verify_sha256 "redis.tar.gz" "${REDIS_SHA256[${REDIS_SRC_VERSION}]}" || return 1
+                    fi
+
                     run tar -zxf redis.tar.gz && \
                     run cd redis-* && \
                     run make && \
@@ -178,7 +203,8 @@ requirepass ${REDIS_PASSWORD}
 EOL
                 # Save data.
                 save_config "REDIS_PASSWORD=${REDIS_PASSWORD}"
-                save_log -e "Redis server requirepass is enabled, here is your authentication password: ${REDIS_PASSWORD}\nSave this password and use it to authenticate your Redis connection (typically use -a parameter)."
+                # Save log (no plaintext secrets: the password lives in /etc/lemper/lemper.conf, 0600).
+                save_log -e "Redis requirepass authentication is enabled.\nPassword stored in /etc/lemper/lemper.conf (mode 0600, root-only)."
             fi
         else
             info "Redis configuration skipped in dry run mode."

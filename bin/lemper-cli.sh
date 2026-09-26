@@ -44,15 +44,30 @@ requires_root "$@"
 
 # Export LEMPer Stack configuration.
 if [[ -f "/etc/lemper/lemper.conf" ]]; then
-    # Clean environemnt first.
-    # shellcheck source=/etc/lemper/lemper.conf
-    # shellcheck disable=SC2046
-    unset $(grep -v '^#' /etc/lemper/lemper.conf | grep -v '^\[' | sed -E 's/(.*)=.*/\1/' | xargs)
-
-    # shellcheck source=/etc/lemper/lemper.conf
-    # shellcheck disable=SC1094
-    # shellcheck disable=SC1091
-    source <(grep -v '^#' /etc/lemper/lemper.conf | grep -v '^\[' | sed -E 's|^(.+)=(.*)$|: ${\1=\2}; export \1|g')
+    # Safe dotenv import (mirrors load_dotenv in scripts/utils.sh, which this
+    # lightweight dispatcher cannot source without side effects): plain
+    # KEY=VALUE only, one optional quote layer stripped, never evaluated.
+    # The old `source <(...)` executed $(...) and backticks hidden in values.
+    while IFS= read -r _line || [[ -n "${_line}" ]]; do
+        case "${_line}" in
+            ''|'#'*) continue ;;
+        esac
+        [[ "${_line}" == *"="* ]] || continue
+        _key=${_line%%=*}
+        _val=${_line#*=}
+        [[ "${_key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        if [[ "${_val}" == \"*\" && "${_val}" == *\" ]]; then
+            _val=${_val#\"}; _val=${_val%\"}
+        elif [[ "${_val}" == \'*\' && "${_val}" == *\' ]]; then
+            _val=${_val#\'}; _val=${_val%\'}
+        fi
+        case "${_val}" in
+            *'$('*|*'`'*) continue ;;
+        esac
+        printf -v "${_key}" '%s' "${_val}"
+        export "${_key}"
+    done < /etc/lemper/lemper.conf
+    unset _line _key _val
 else
     echo "LEMPer Stack configuration required, but the file doesn't exist."
     echo "It should be created during installation process and placed under '/etc/lemper/lemper.conf'."
@@ -168,6 +183,7 @@ These are common ${PROG_NAME} commands used in various situations:
   db            An aliases of 'databases' sub command.
   manage        Manage existing virtual host (enable, disable, delete, etc).
   mod           An aliases of 'manage' sub command.
+  package       Manage hosting packages (disk quota, site/db limits).
 
 For help with each command run:
 ${PROG_NAME} <command> -h | --help

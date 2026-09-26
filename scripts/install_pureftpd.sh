@@ -213,11 +213,11 @@ function init_pureftpd_install() {
                 if [[ "${FTP_SERVER_VERSION}" == "latest" || "${FTP_SERVER_VERSION}" == "stable" ]]; then
                     PUREFTPD_FILENAME="pure-ftpd-1.0.50.tar.gz"
                     #PUREFTPD_ZIP_URL="https://download.pureftpd.org/pub/pure-ftpd/releases/${PUREFTPD_FILENAME}"
-                    PUREFTPD_ZIP_URL="https://github.com/jedisct1/pure-ftpd/releases/download/1.0.50/${PUREFTPD_FILENAME}"
+                    PUREFTPD_ZIP_URL="$(gh_url "https://github.com/jedisct1/pure-ftpd/releases/download/1.0.50/${PUREFTPD_FILENAME}")"
                 else
                     PUREFTPD_FILENAME="pure-ftpd-${FTP_SERVER_VERSION}.tar.gz"
                     #PUREFTPD_ZIP_URL="https://download.pureftpd.org/pub/pure-ftpd/releases/${PUREFTPD_FILENAME}"
-                    PUREFTPD_ZIP_URL="https://github.com/jedisct1/pure-ftpd/releases/download/${FTP_SERVER_VERSION}/${PUREFTPD_FILENAME}"
+                    PUREFTPD_ZIP_URL="$(gh_url "https://github.com/jedisct1/pure-ftpd/releases/download/${FTP_SERVER_VERSION}/${PUREFTPD_FILENAME}")"
                 fi
 
                 run cd "${BUILD_DIR}" || return 1

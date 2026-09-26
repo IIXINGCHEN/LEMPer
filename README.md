@@ -20,7 +20,7 @@ LEMPer stands for Linux, Engine-X (Nginx), MariaDB and PHP installer written in 
 ## Features
 
 * Nginx - A high performance web server and a reverse proxy server.
-  * Community package from [Ondrej repo](https://launchpad.net/~ondrej/+archive/ubuntu/nginx) or @eilandert's [MyGuard repo](https://deb.myguard.nl/nginx-modules/) with built-in modules.
+  * Stable-branch package from the official [nginx.org repository](https://nginx.org/en/linux_packages.html) (default), [Ondrej repo](https://launchpad.net/~ondrej/+archive/ubuntu/nginx) or @eilandert's [MyGuard repo](https://deb.myguard.nl/nginx-modules/) with built-in modules.
   * Custom build from [source](https://github.com/nginx/nginx) featured with :
     * [Brotli module](https://github.com/google/ngx_brotli.git) an alternative compression to Gzip
     * [Lua Nginx module](https://github.com/openresty/lua-nginx-module) with LuaJIT 2 library
@@ -34,7 +34,7 @@ LEMPer stands for Linux, Engine-X (Nginx), MariaDB and PHP installer written in 
   * Get an A+ grade on several SSL Security Test ([Qualys SSL Labs](https://www.ssllabs.com/ssltest/analyze.html?d=masedi.net), [ImmuniWeb](https://www.immuniweb.com/ssl/?id=bVrykFnK), and Wormly).
 * PHP - Most used language that [powers 78.9% of all websites](https://w3techs.com/technologies/details/pl-php) around the universe.
   * Community package from [Ondrej's PHP repository](https://launchpad.net/~ondrej/+archive/ubuntu/php).
-  * Multiple PHP versions ~7.1 [EOL]~, ~7.2 [EOL]~, ~7.3 [EOL]~, ~7.4 [EOL]~, ~8.0 [EOL]~, 8.1 [SFO], 8.2 [SFO], 8.3 [Stable], 8.4 [Latest].
+  * Multiple PHP versions ~7.1 [EOL]~, ~7.2 [EOL]~, ~7.3 [EOL]~, ~7.4 [EOL]~, ~8.0 [EOL]~, ~8.1 [EOL]~, 8.2 [SFO], 8.3 [Stable], 8.4 [LTS default], 8.5 [Latest].
   * Run PHP as user who own the file (Multi-user isolation via FPM pool).
   * Feel the faster Nginx with secure multi-user environment like a top-notch shared hosting.
   * Supported PHP Framework and CMS:
@@ -50,6 +50,10 @@ LEMPer stands for Linux, Engine-X (Nginx), MariaDB and PHP installer written in 
 * Key-value store database with Redis.
 * In-memory cache with Memcached.
 * FTP server with VSFTPD or Pure-FTPd.
+* Docker Engine + Docker Compose (optional) with a curated app market
+  (Uptime Kuma monitoring, Vaultwarden password manager) via `lemper-cli docker`.
+  See [DOCKER.md](DOCKER.md) for the philosophy and port map.
+* Optional BBR TCP congestion control (`ENABLE_BBR`).
 * Web-based administration tools:
   * [Adminer](https://www.adminer.org/) web-based SQL & MongoDB database manager (PhpMyAdmin replacement).
   * [phpRedisAdmin](https://github.com/erikdubbelboer/phpRedisAdmin) web-based Redis database manager.
@@ -62,7 +66,33 @@ LEMPer stands for Linux, Engine-X (Nginx), MariaDB and PHP installer written in 
 * Clone LEMPer Git repositroy, ```git clone https://github.com/joglomedia/LEMPer.git```
 * Enter LEMPer directory
 * Checkout to the desired version, ```git checkout 2.x.x```
-* Make a copy of .env.dist to .env ```cp .env.dist .env``` and replace the values
+* Generate a production-ready `.env` with `./lemper-env.sh` (recommended), or copy `.env.dist` to `.env` manually ```cp .env.dist .env``` and replace the values
+
+### Production .env Manager (`lemper-env.sh`)
+
+On the production server, use the bundled helper to generate a secure `.env`
+instead of editing it by hand. It creates strong random passwords for every
+secret field, auto-detects hostname/IP, forces `ENVIRONMENT=production`, backs
+up any existing `.env`, and validates the result:
+
+```bash
+# Interactive: prompts for the few values it cannot detect
+sudo ./lemper-env.sh init
+
+# Non-interactive example (good for automation)
+sudo ./lemper-env.sh init --php "8.4" --default-php "8.4" \
+  --db mariadb:12.3 --region auto \
+  --hostname web1.yourdomain.com --email admin@yourdomain.com --yes
+
+# Other commands
+./lemper-env.sh validate   # production-readiness check
+./lemper-env.sh show       # display .env with secrets masked
+./lemper-env.sh set KEY VALUE   # change one value (backs up first)
+./lemper-env.sh rotate --yes    # regenerate all passwords (backs up first)
+```
+
+> Never commit the generated `.env` to version control. Passwords are stored
+> in `.env` (mode 600) - copy them into your password manager after `init`.
 
 ### Install LEMPer Stack
 
@@ -73,6 +103,34 @@ cd LEMPer && \
 cp -f .env.dist .env && \
 sudo ./install.sh
 ```
+
+### Download Mirrors (China / International)
+
+LEMPer automatically detects whether the server network is in China or
+international, and uses the fastest download mirrors for all software
+dependencies (APT archives, MariaDB, PostgreSQL, MongoDB, Python, Go,
+Composer, GitHub releases, etc.). Detection runs once at the start of the
+installation, takes at most ~6 seconds, and falls back to the official
+international sources when the network is unreachable.
+
+Override it in the `[mirrors]` section of your `.env`:
+
+```ini
+[mirrors]
+# auto | cn | global  (default: auto)
+MIRROR_REGION="auto"
+
+# Custom Ubuntu/Debian archive mirror base used when region=cn
+# (default: https://mirrors.tuna.tsinghua.edu.cn).
+APT_MIRROR_URL=""
+
+# Optional GitHub acceleration proxy prefix, e.g. https://gh-proxy.example.com
+# Leave empty to download from GitHub directly (default).
+GITHUB_PROXY=""
+```
+
+See [MIRROR_SUPPORT.md](MIRROR_SUPPORT.md) for the full design and the
+per-source mirror mapping table.
 
 ### Remove LEMPer Stack
 
@@ -160,19 +218,21 @@ http://YOUR_IP_ADDRESS:8082/lcp/filemanager/
 
 ## TODOs
 
-* [x] Add support for Debian (Bullseye, Bookworm) & Ubuntu (Bionic, Focal, Jammy) distro
+* [x] Add support for Debian (Buster, Bullseye, Bookworm) & Ubuntu (Focal, Jammy, Noble) distro
+  (note: Ubuntu Bionic 18.04 and Debian Trixie are not supported)
 * [x] Add custom build latest [Nginx](https://nginx.org/en/) from source
 * [x] Add [Let's Encrypt SSL](https://letsencrypt.org/)
-* [x] Add network security (iptable rules, firewall configurator, else?)
-* [x] Add database backup tool (Mariabackup, Percona Xtrabackup, else?)
+* [x] Add network security (UFW firewall configurator)
+* [x] Add database backup tool (Mariabackup)
 * [x] Add PostgreSQL database (SQL object-relational database system)
 * [x] Add Pure-FTPd installation as an alternative option to VSFTPD
-* [x] Add enhanced security (AppArmor, cgroups, jailkit (chrooted/jail users), fail2ban, else?)
-* [ ] Add CrowdSec a modern Host-based Intrusion Prevention System (modern-replacement for Fail2ban)
-* [ ] Add NodeJS installation to support modern web frontend development
-* [ ] Add file backup tool (Borg, Duplicati, Rclone, Restic, Rsnapshot, else?)
-* [ ] Add server monitoring (Amplify, Monit, Nagios, else?)
-* [ ] Add user account & hosting package management
+* [x] Add enhanced security (fail2ban, UFW, SSH hardening; AppArmor profiles not enforced, cgroups via systemd limits, jailkit chroot for SFTP users)
+* [x] Add CrowdSec a modern Host-based Intrusion Prevention System (modern-replacement for Fail2ban)
+* [x] Add NodeJS installation to support modern web frontend development
+* [x] Add file backup tool (Restic)
+* [x] Add server monitoring (Monit)
+* [x] Add user account & hosting package management (system users + package quotas via lemper-cli)
+* [x] Add Docker & Docker Compose support with curated app market (uptime-kuma, vaultwarden)
 
 Add your feature [request here](https://github.com/joglomedia/LEMPer/issues/new)!
 

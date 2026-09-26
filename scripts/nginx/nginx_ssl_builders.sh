@@ -25,9 +25,9 @@ function build_openssl() {
     # Determine source URL
     local OPENSSL_SOURCE_URL
     if grep -iq quic <<<"${SSL_VERSION}"; then
-        OPENSSL_SOURCE_URL="https://github.com/quictls/openssl/archive/refs/tags/${SSL_VERSION}.tar.gz"
+        OPENSSL_SOURCE_URL="$(gh_url "https://github.com/quictls/openssl/archive/refs/tags/${SSL_VERSION}.tar.gz")"
     else
-        OPENSSL_SOURCE_URL="https://github.com/openssl/openssl/archive/refs/tags/${SSL_VERSION}.tar.gz"
+        OPENSSL_SOURCE_URL="$(gh_url "https://github.com/openssl/openssl/archive/refs/tags/${SSL_VERSION}.tar.gz")"
     fi
 
     if curl -sLI "${OPENSSL_SOURCE_URL}" | grep -q "HTTP/[.12]* [2].."; then
@@ -104,7 +104,7 @@ function build_boringssl() {
     local BORINGSSL_VERSION=${BSPARTS[1]}
     [[ -z ${BORINGSSL_VERSION} || ${BORINGSSL_VERSION} == "latest" ]] && BORINGSSL_VERSION="master"
 
-    local BORINGSSL_SOURCE_URL="https://boringssl.googlesource.com/boringssl/+archive/refs/heads/${BORINGSSL_VERSION}.tar.gz"
+    local BORINGSSL_SOURCE_URL="${BORINGSSL_BASE:-https://boringssl.googlesource.com/boringssl/+archive/refs/heads}/${BORINGSSL_VERSION}.tar.gz"
 
     if curl -sLI "${BORINGSSL_SOURCE_URL}" | grep -q "HTTP/[.12]* [2].."; then
         run curl -sSL -o "${SSL_VERSION}.tar.gz" "${BORINGSSL_SOURCE_URL}" && \
@@ -151,13 +151,13 @@ function install_golang_if_missing() {
 
     echo "Installing Golang (required for BoringSSL)..."
 
-    local GOLANG_VER="1.17.8"
+    local GOLANG_VER="1.27.1"
     local DISTRIB_ARCH
     DISTRIB_ARCH=$(get_distrib_arch)
 
     case "${DISTRIB_NAME}" in
         debian)
-            local GOLANG_DOWNLOAD_URL="https://go.dev/dl/go${GOLANG_VER}.linux-${DISTRIB_ARCH}.tar.gz"
+            local GOLANG_DOWNLOAD_URL="$(mirror_url go)/go${GOLANG_VER}.linux-${DISTRIB_ARCH}.tar.gz"
 
             if curl -sLI "${GOLANG_DOWNLOAD_URL}" | grep -q "HTTP/[.12]* [2].."; then
                 run curl -sSL -o golang.tar.gz "${GOLANG_DOWNLOAD_URL}" && \
@@ -185,25 +185,25 @@ function install_golang_if_missing() {
 # Sets NGX_CONFIGURE_ARGS with PCRE paths
 ##
 function build_pcre() {
-    local PCRE_VERSION="${1:-${NGINX_PCRE_VERSION:-8.45}}"
+    local PCRE_VERSION="${1:-${NGINX_PCRE_VERSION:-10.48}}"
 
-    echo "Building PCRE JIT ${PCRE_VERSION}..."
+    echo "Building PCRE2 JIT ${PCRE_VERSION}..."
 
-    local PCRE_SOURCE_URL="https://onboardcloud.dl.sourceforge.net/project/pcre/pcre/${PCRE_VERSION}/pcre-${PCRE_VERSION}.tar.gz"
+    local PCRE_SOURCE_URL="$(gh_url "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-${PCRE_VERSION}/pcre2-${PCRE_VERSION}.tar.gz")"
 
     if curl -sLI "${PCRE_SOURCE_URL}" | grep -q "HTTP/[.12]* [2].."; then
-        run curl -sSL -o "pcre-${PCRE_VERSION}.tar.gz" "${PCRE_SOURCE_URL}" && \
-        run tar -zxf "pcre-${PCRE_VERSION}.tar.gz"
+        run curl -sSL -o "pcre2-${PCRE_VERSION}.tar.gz" "${PCRE_SOURCE_URL}" && \
+        run tar -zxf "pcre2-${PCRE_VERSION}.tar.gz"
 
-        if [[ -d "${NGINX_BUILD_DIR}/pcre-${PCRE_VERSION}" ]]; then
+        if [[ -d "${NGINX_BUILD_DIR}/pcre2-${PCRE_VERSION}" ]]; then
             NGX_CONFIGURE_ARGS+=(
-                "--with-pcre=${NGINX_BUILD_DIR}/pcre-${PCRE_VERSION}"
+                "--with-pcre=${NGINX_BUILD_DIR}/pcre2-${PCRE_VERSION}"
                 "--with-pcre-jit"
             )
             return 0
         fi
     else
-        error "Unable to determine PCRE JIT ${PCRE_VERSION} source."
+        error "Unable to determine PCRE2 JIT ${PCRE_VERSION} source."
         return 1
     fi
 }
@@ -212,7 +212,7 @@ function build_pcre() {
 # Build custom SSL based on configuration
 ##
 function build_custom_ssl() {
-    local SSL_VERSION="${NGINX_CUSTOMSSL_VERSION:-openssl-1.1.1l}"
+    local SSL_VERSION="${NGINX_CUSTOMSSL_VERSION:-openssl-3.5.8}"
 
     echo "Building custom SSL ${SSL_VERSION^}..."
 

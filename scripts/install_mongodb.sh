@@ -22,15 +22,15 @@ fi
 # Set MongoDB version.
 case "${RELEASE_NAME}" in
     bookworm)
-        MONGODB_VERSION="7.0"
+        MONGODB_VERSION="8.0"
     ;;
     jammy)
-        if version_older_than "${MONGODB_VERSION}" "6.0"; then
-            MONGODB_VERSION="6.0"
+        if version_older_than "${MONGODB_VERSION}" "8.0"; then
+            MONGODB_VERSION="8.0"
         fi
     ;;
     *)
-        MONGODB_VERSION=${MONGODB_VERSION:-"6.0"}
+        MONGODB_VERSION=${MONGODB_VERSION:-"8.0"}
     ;;
 esac
 
@@ -45,7 +45,7 @@ function add_mongodb_repo() {
 
                 run bash -c "curl -fsSL https://www.mongodb.org/static/pgp/server-${MONGODB_VERSION}.asc | gpg --dearmor --yes -o /usr/share/keyrings/mongodb-server-${MONGODB_VERSION}.gpg" && \
                 run touch "/etc/apt/sources.list.d/mongodb-org-${MONGODB_VERSION}-${RELEASE_NAME}.list" && \
-                run bash -c "echo 'deb [signed-by=/usr/share/keyrings/mongodb-server-${MONGODB_VERSION}.gpg] https://repo.mongodb.org/apt/debian ${RELEASE_NAME}/mongodb-org/${MONGODB_VERSION} main' > /etc/apt/sources.list.d/mongodb-org-${MONGODB_VERSION}-${RELEASE_NAME}.list" && \
+                run bash -c "echo 'deb [signed-by=/usr/share/keyrings/mongodb-server-${MONGODB_VERSION}.gpg] ${MONGODB_REPO_BASE:-https://repo.mongodb.org/apt}/debian ${RELEASE_NAME}/mongodb-org/${MONGODB_VERSION} main' > /etc/apt/sources.list.d/mongodb-org-${MONGODB_VERSION}-${RELEASE_NAME}.list" && \
                 run apt-get update -q -y
             else
                 info "MongoDB ${MONGODB_VERSION} repository already exists."
@@ -57,7 +57,7 @@ function add_mongodb_repo() {
 
                 run bash -c "curl -fsSL https://www.mongodb.org/static/pgp/server-${MONGODB_VERSION}.asc | gpg --dearmor --yes -o /usr/share/keyrings/mongodb-server-${MONGODB_VERSION}.gpg" && \
                 run touch "/etc/apt/sources.list.d/mongodb-org-${MONGODB_VERSION}-${RELEASE_NAME}.list" && \
-                run bash -c "echo 'deb [signed-by=/usr/share/keyrings/mongodb-server-${MONGODB_VERSION}.gpg] https://repo.mongodb.org/apt/ubuntu ${RELEASE_NAME}/mongodb-org/${MONGODB_VERSION} multiverse' > /etc/apt/sources.list.d/mongodb-org-${MONGODB_VERSION}-${RELEASE_NAME}.list" && \
+                run bash -c "echo 'deb [signed-by=/usr/share/keyrings/mongodb-server-${MONGODB_VERSION}.gpg] ${MONGODB_REPO_BASE:-https://repo.mongodb.org/apt}/ubuntu ${RELEASE_NAME}/mongodb-org/${MONGODB_VERSION} multiverse' > /etc/apt/sources.list.d/mongodb-org-${MONGODB_VERSION}-${RELEASE_NAME}.list" && \
                 run apt-get update -q -y
             else
                 info "MongoDB ${MONGODB_VERSION} repository already exists."
@@ -96,7 +96,13 @@ function init_mongodb_install() {
 
         echo "Installing MongoDB server..."
 
-        run apt-get install -q -y libbson-1.0 libmongoc-1.0-0 mongodb-org mongodb-org-server \
+        # Ubuntu 24.04 (Noble) uses t64 library package names.
+        local MONGODB_LIBS="libbson-1.0 libmongoc-1.0-0"
+        if [[ "${DISTRIB_NAME}" == "ubuntu" && "${RELEASE_NAME}" == "noble" ]]; then
+            MONGODB_LIBS="libbson-1.0-0t64 libmongoc-1.0-0t64"
+        fi
+
+        run apt-get install -q -y ${MONGODB_LIBS} mongodb-org mongodb-org-server \
             mongodb-org-shell mongodb-org-tools mongodb-org-mongos mongodb-database-tools \
             mongodb-org-database-tools-extra mongodb-mongosh
 
@@ -122,14 +128,46 @@ function init_mongodb_install() {
                 export MONGODB_ADMIN_USER=${MONGODB_ADMIN_USER:-"lemperdb"}
                 export MONGODB_ADMIN_PASSWORD=${MONGODB_ADMIN_PASSWORD:-"$(openssl rand -base64 64 | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)"}
 
-                run mongosh admin \
-                    --eval "\"db.createUser({'user': '${MONGODB_ADMIN_USER}', 'pwd': '${MONGODB_ADMIN_PASSWORD}', 'roles':[{'role': 'root', 'db': 'admin'}]});\""
+                # Create the admin user via a 0600 temp JS file, so the password
+                # never appears in the process argument list.
+                local MONGO_JS && MONGO_JS=$(mktemp /tmp/lemper-mongo.XXXXXX.js)
+                chmod 0600 "${MONGO_JS}"
+                # Escape backslashes and double quotes for the JS string literal.
+                local _muser=${MONGODB_ADMIN_USER//\\/\\\\}
+                local _mpass=${MONGODB_ADMIN_PASSWORD//\\/\\\\}
+                _muser=${_muser//\"/\\\"}
+                _mpass=${_mpass//\"/\\\"}
+                printf 'db.createUser({user: "%s", pwd: "%s", roles: [{role: "root", db: "admin"}]});\n' \
+                    "${_muser}" "${_mpass}" > "${MONGO_JS}"
+
+                run mongosh admin "${MONGO_JS}"
+                run rm -f "${MONGO_JS}"
+
+                # Enable access control now that the admin user exists.
+                # Without authorization, any local user can connect without credentials.
+                if [[ "${DRYRUN}" != true && -f /etc/mongod.conf ]]; then
+                    if grep -qE '^[[:space:]]*authorization:[[:space:]]*enabled' /etc/mongod.conf; then
+                        info "MongoDB authorization already enabled."
+                    else
+                        awk '
+                            /^[[:space:]]*authorization:/ { next }
+                            { print }
+                            /^security:/ { print "  authorization: enabled"; added=1 }
+                            END { if (!added) { print ""; print "security:"; print "  authorization: enabled" } }
+                        ' /etc/mongod.conf > /etc/mongod.conf.new && \
+                        mv /etc/mongod.conf.new /etc/mongod.conf && \
+                        chmod 0600 /etc/mongod.conf
+                        echo "Enabled MongoDB authorization in /etc/mongod.conf; restarting mongod..."
+                        systemctl restart mongod
+                    fi
+                fi
 
                 # Save config.
                 save_config -e "MONGODB_HOST=127.0.0.1\nMONGODB_PORT=27017\nMONGODB_ADMIN_USER=${MONGODB_ADMIN_USER}\nMONGODB_ADMIN_PASS=${MONGODB_ADMIN_PASSWORD}"
 
                 # Save log.
-                save_log -e "MongoDB default admin user is enabled, here is your admin credentials:\nAdmin username: ${MONGODB_ADMIN_USER} | Admin password: ${MONGODB_ADMIN_PASSWORD}\nSave this credentials and use it to authenticate your MongoDB connection."
+                # Save log (no plaintext secrets: credentials live in /etc/lemper/lemper.conf, 0600).
+                save_log -e "MongoDB default admin user '${MONGODB_ADMIN_USER}' created.\nCredentials stored in /etc/lemper/lemper.conf (mode 0600, root-only)."
             else
                 echo "MongoDB installation completed with errors on start-up, please check the log file."
                 echo -e "After installation finished, you can add a MongoDB administrative user.\nExample command lines below:";

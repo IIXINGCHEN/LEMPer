@@ -176,8 +176,16 @@ if [[ "${REMOVE_SWAP}" == Y* || "${REMOVE_SWAP}" == y* || "${FORCE_REMOVE}" == t
     fi
 fi
 
+### Remove Docker Engine (optional add-on) ###
+if [ -f ./scripts/remove_docker.sh ]; then
+    echo ""
+    . ./scripts/remove_docker.sh
+fi
+
 ### Remove web tools ###
 [ -f /usr/local/bin/lemper-cli ] && run rm -f /usr/local/bin/lemper-cli
+[ -L /usr/bin/lemper-cli ] && run rm -f /usr/bin/lemper-cli
+[ -L /usr/bin/lemper ] && run rm -f /usr/bin/lemper
 [ -d /usr/local/lib/lemper ] && run rm -fr /usr/local/lib/lemper
 
 # Clean up existing lemper config.

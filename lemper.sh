@@ -552,6 +552,8 @@ function init_lemper_install() {
         cp -f .env .env.bak
     else
         cp .env.dist .env
+        # The dotenv file holds secrets; keep it root-only.
+        chmod 600 .env
     fi
 
     # Set default args.
@@ -603,7 +605,7 @@ function init_lemper_install() {
             --with-nginx-custom-ssl)
                 exit_if_optarg_is_empty "${1}" "${2}"
                 shift
-                NGINX_CUSTOMSSL_VERSION=${1-"openssl-1.1.1l"}
+                NGINX_CUSTOMSSL_VERSION=${1-"openssl-3.5.8"}
                 sed -i "s/NGINX_WITH_CUSTOMSSL=[a-zA-Z]*/NGINX_WITH_CUSTOMSSL=true/g" .env
                 sed -i "s/NGINX_CUSTOMSSL_VERSION=\"[a-zA-Z0-9\ ._-]*\"/NGINX_CUSTOMSSL_VERSION=\"${NGINX_CUSTOMSSL_VERSION}\"/g" .env
                 shift
@@ -619,7 +621,7 @@ function init_lemper_install() {
             --with-nginx-pcre)
                 exit_if_optarg_is_empty "${1}" "${2}"
                 shift
-                NGINX_PCRE_VERSION=${1-"8.45"}
+                NGINX_PCRE_VERSION=${1-"10.48"}
                 sed -i "s/NGINX_WITH_PCRE=[a-zA-Z]*/NGINX_WITH_PCRE=true/g" .env
                 sed -i "s/NGINX_PCRE_VERSION=\"[a-zA-Z0-9\ ._-]*\"/NGINX_PCRE_VERSION=\"${NGINX_PCRE_VERSION}\"/g" .env
                 shift

@@ -31,10 +31,10 @@ function add_php_repo() {
     case "${DISTRIB_NAME}" in
         debian)
             if [[ ! -f "/etc/apt/sources.list.d/ondrej-php-${RELEASE_NAME}.list" ]]; then
-                run curl -sSL -o "/etc/apt/trusted.gpg.d/ondrej-php-${RELEASE_NAME}.gpg" https://packages.sury.org/php/apt.gpg && \
+                run curl -sSL -o "/etc/apt/trusted.gpg.d/ondrej-php-${RELEASE_NAME}.gpg" "${SURY_BASE:-https://packages.sury.org}/php/apt.gpg" && \
                 run touch "/etc/apt/sources.list.d/ondrej-php-${RELEASE_NAME}.list" && \
-                run bash -c "echo 'deb https://packages.sury.org/php/ ${RELEASE_NAME} main' > /etc/apt/sources.list.d/ondrej-php-${RELEASE_NAME}.list" && \
-                run bash -c "echo 'deb-src https://packages.sury.org/php/ ${RELEASE_NAME} main' >> /etc/apt/sources.list.d/ondrej-php-${RELEASE_NAME}.list"
+                run bash -c "echo 'deb ${SURY_BASE:-https://packages.sury.org}/php/ ${RELEASE_NAME} main' > /etc/apt/sources.list.d/ondrej-php-${RELEASE_NAME}.list" && \
+                run bash -c "echo 'deb-src ${SURY_BASE:-https://packages.sury.org}/php/ ${RELEASE_NAME} main' >> /etc/apt/sources.list.d/ondrej-php-${RELEASE_NAME}.list"
 
                 # Add openswoole official repository.
                 case "${RELEASE_NAME}" in
@@ -90,7 +90,7 @@ function install_php() {
     # PHP version.
     local PHPv="${1}"
     if [[ -z "${PHPv}" ]]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     # Checking if PHP already installed.
@@ -250,7 +250,7 @@ function restart_php_fpm() {
     # PHP version.
     local PHPv="${1}"
     if [[ -z "${PHPv}" ]]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     echo "Restarting PHP-FPM service..."
@@ -281,7 +281,7 @@ function optimize_php_fpm() {
     # PHP version.
     local PHPv="${1}"
     if [[ -z "${PHPv}" ]]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     echo "Optimizing PHP ${PHPv} & FPM configuration..."
@@ -333,7 +333,7 @@ EOL
     else
         if [[ "${DRYRUN}" != true ]]; then
             if grep -qwE "^error_log\ =\ \/var\/log\/php${PHPv}-fpm.log" "/etc/php/${PHPv}/fpm/php-fpm.conf"; then
-                run sed -i "s|^error_log\ =\ /var/log/php${PHPv}-fpm.log|error_log\ =\ /var/log/php/php${PHPv}-fpm.log/g" \
+                run sed -i "s|^error_log\ =\ /var/log/php${PHPv}-fpm.log|error_log\ =\ /var/log/php/php${PHPv}-fpm.log|g" \
                     "/etc/php/${PHPv}/fpm/php-fpm.conf"
             else
                 run sed -i "/^;error_log/a error_log\ =\ \/var\/log\/php\/php${PHPv}-fpm.log" \
@@ -537,7 +537,7 @@ function add_php_logrotate() {
     # PHP version.
     local PHPv="${1}"
     if [[ -z "${PHPv}" ]]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     if [[ -f "/etc/logrotate.d/php${PHPv}-fpm" ]]; then
@@ -571,7 +571,7 @@ function enable_php_memcached() {
     # PHP version.
     local PHPv="${1}"
     if [[ -z "${PHPv}" ]]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     # Enable PHP memcached module.
@@ -613,7 +613,7 @@ function enable_php_mongodb() {
     # PHP version.
     local PHPv="${1}"
     if [[ -z "${PHPv}" ]]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     PHP_LIB_DIR=$("php${PHPv}" -i | grep "extension_dir" | awk '{print $3}')
@@ -657,7 +657,7 @@ function enable_php_redis() {
     # PHP version.
     local PHPv="${1}"
     if [[ -z "${PHPv}" ]]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     PHP_LIB_DIR=$("php${PHPv}" -i | grep "extension_dir" | awk '{print $3}')
@@ -701,7 +701,7 @@ function install_php_composer() {
     # PHP version.
     local PHPv="${1}"
     if [[ -z "${PHPv}" ]]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     # Checking if php composer already installed.
@@ -723,7 +723,7 @@ function install_php_composer() {
             if [[ -n $(command -v "php${PHPv}") ]]; then
                 PHP_BIN=$(command -v "php${PHPv}")
                 EXPECTED_SIGNATURE="$(curl -sSL -o - https://composer.github.io/installer.sig)"
-                run "${PHP_BIN}" -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+                run "${PHP_BIN}" -r "copy('$(mirror_url composer)', 'composer-setup.php');"
                 ACTUAL_SIGNATURE="$(${PHP_BIN} -r "echo hash_file('sha384', 'composer-setup.php');")"
 
                 if [[ "${EXPECTED_SIGNATURE}" == "${ACTUAL_SIGNATURE}" ]]; then
@@ -775,7 +775,7 @@ function install_ioncube_loader() {
 
     IC_ARCH=${ARCH:-$(uname -m)}
     IC_ZIP_FILENAME="ioncube_loaders_linux_${IC_ARCH}.tar.gz"
-    IC_ZIP_URL="https://raw.githubusercontent.com/joglomedia/php-loaders/main/${IC_ZIP_FILENAME}"
+    IC_ZIP_URL="$(gh_url "https://raw.githubusercontent.com/joglomedia/php-loaders/main/${IC_ZIP_FILENAME}")"
 
     if curl -sLI "${IC_ZIP_URL}" | grep -q "HTTP/[.12]* [2].."; then
         run curl -sSL -o "${IC_ZIP_FILENAME}" "${IC_ZIP_URL}" && \
@@ -795,7 +795,7 @@ function enable_ioncube_loader() {
     # PHP version.
     local PHPv="${1}"
     if [ -z "${PHPv}" ]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     echo "Enable ionCube loader for PHP ${PHPv}."
@@ -846,7 +846,7 @@ function install_sourceguardian_loader() {
 
     SG_ARCH=${ARCH:-$(uname -m)}
     SG_ZIP_FILENAME="sourceguardian_loaders.linux-${SG_ARCH}.tar.gz"
-    SG_ZIP_URL="https://raw.githubusercontent.com/joglomedia/php-loaders/main/${SG_ZIP_FILENAME}"
+    SG_ZIP_URL="$(gh_url "https://raw.githubusercontent.com/joglomedia/php-loaders/main/${SG_ZIP_FILENAME}")"
 
     if curl -sLI "${SG_ZIP_URL}" | grep -q "HTTP/[.12]* [2].."; then
         run curl -sSL -o "${SG_ZIP_FILENAME}" "${SG_ZIP_URL}" && \
@@ -866,7 +866,7 @@ function enable_sourceguardian_loader() {
     # PHP version.
     local PHPv="${1}"
     if [[ -z "${PHPv}" ]]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     echo "Enable SourceGuardian loader for PHP ${PHPv}."
@@ -903,7 +903,7 @@ function install_php_loader() {
     local SELECTED_PHP_LOADER="${2}"
 
     if [[ -z "${PHPv}" ]]; then
-        PHPv=${DEFAULT_PHP_VERSION:-"8.3"}
+        PHPv=${DEFAULT_PHP_VERSION:-"8.4"}
     fi
 
     if [[ -z "${SELECTED_PHP_LOADER}" ]]; then
@@ -1030,12 +1030,13 @@ function init_php_install() {
             echo "  3). PHP 7.3 (EOL)"
             echo "  4). PHP 7.4 (EOL)"
             echo "  5). PHP 8.0 (EOL)"
-            echo "  6). PHP 8.1 (SFO)"
+            echo "  6). PHP 8.1 (EOL)"
             echo "  7). PHP 8.2 (SFO)"
             echo "  8). PHP 8.3 (Stable)"
-            echo "  9). PHP 8.4 (Latest Stable)"
-            echo "  10). All available versions"
-            echo "  11). Do not install!"
+            echo "  9). PHP 8.4 (LTS, default)"
+            echo "  10). PHP 8.5 (Latest)"
+            echo "  11). All available versions"
+            echo "  12). Do not install!"
             echo "--------------------------------------------"
 
             [[ -n "${DEFAULT_PHP_VERSION}" ]] && \
@@ -1044,13 +1045,13 @@ function init_php_install() {
             while [[ ${SELECTED_PHP} != "1" && ${SELECTED_PHP} != "2" && ${SELECTED_PHP} != "3" && \
                 ${SELECTED_PHP} != "4" && ${SELECTED_PHP} != "5" && ${SELECTED_PHP} != "6" && \
                 ${SELECTED_PHP} != "7" && ${SELECTED_PHP} != "8" && ${SELECTED_PHP} != "9" && \
-                ${SELECTED_PHP} != "10" && ${SELECTED_PHP} != "11" && \
+                ${SELECTED_PHP} != "10" && ${SELECTED_PHP} != "11" && ${SELECTED_PHP} != "12" && \
                 ${SELECTED_PHP} != "7.1" && ${SELECTED_PHP} != "7.2" && ${SELECTED_PHP} != "7.3" && \
                 ${SELECTED_PHP} != "7.4" && ${SELECTED_PHP} != "8.0" && ${SELECTED_PHP} != "8.1" && \
                 ${SELECTED_PHP} != "8.2" && ${SELECTED_PHP} != "8.3" && ${SELECTED_PHP} != "8.4" && \
-                ${SELECTED_PHP} != "all" && ${SELECTED_PHP} != "none"
+                ${SELECTED_PHP} != "8.5" && ${SELECTED_PHP} != "all" && ${SELECTED_PHP} != "none"
             ]]; do
-                read -rp "Enter a PHP version from an option above [1-11]: " -i "${DEFAULT_PHP_VERSION}" -e SELECTED_PHP
+                read -rp "Enter a PHP version from an option above [1-12]: " -i "${DEFAULT_PHP_VERSION}" -e SELECTED_PHP
             done
 
             case "${SELECTED_PHP}" in
@@ -1081,11 +1082,14 @@ function init_php_install() {
                 9 | "8.4")
                     SELECTED_PHP_VERSIONS+=("8.4")
                 ;;
-                10 | "all")
-                    # Select all PHP versions (except EOL & Beta).
-                    SELECTED_PHP_VERSIONS=("7.1" "7.2" "7.3" "7.4" "8.0" "8.1" "8.2" "8.3" "8.4")
+                10 | "8.5")
+                    SELECTED_PHP_VERSIONS+=("8.5")
                 ;;
-                11 | n*)
+                11 | "all")
+                    # Select all PHP versions (except EOL & Beta).
+                    SELECTED_PHP_VERSIONS=("7.1" "7.2" "7.3" "7.4" "8.0" "8.1" "8.2" "8.3" "8.4" "8.5")
+                ;;
+                12 | n*)
                     info "No selected PHP version will be installed."
                     return
                 ;;
@@ -1105,7 +1109,7 @@ function init_php_install() {
 
     # Install all selected PHP versions and extensions.
     for PHPv in "${SELECTED_PHP_VERSIONS[@]}"; do
-        IS_PKG_AVAIL=$(apt-cache search "php${PHPv}" | grep -c "${PHPv}")
+        IS_PKG_AVAIL=$(apt-cache search "php${PHPv}" | grep -c "${PHPv}" || true)
 
         if [[ "${IS_PKG_AVAIL}" -gt 0 ]]; then
             # Install PHP + default extensions.
@@ -1145,9 +1149,14 @@ init_php_install "$@"
 if [[ -n $(command -v "php${DEFAULT_PHP_VERSION}") ]]; then
     echo "Set default PHP command line to version ${DEFAULT_PHP_VERSION}..."
 
-    run update-alternatives --set php "$(command -v "php${DEFAULT_PHP_VERSION}")"
-    run update-alternatives --set phar "$(command -v "phar${DEFAULT_PHP_VERSION}")"
-    run update-alternatives --set phar.phar "$(command -v "phar.phar${DEFAULT_PHP_VERSION}")"
-    run update-alternatives --set php-config "$(command -v "php-config${DEFAULT_PHP_VERSION}")"
-    run update-alternatives --set phpize "$(command -v "phpize${DEFAULT_PHP_VERSION}")"
+    # Only point an alternative at a binary that actually exists
+    # (php-config/phpize come from the optional php-dev package).
+    for alt_name in php phar phar.phar php-config phpize; do
+        alt_bin=$(command -v "${alt_name}${DEFAULT_PHP_VERSION}" 2>/dev/null || true)
+        if [[ -n "${alt_bin}" ]]; then
+            run update-alternatives --set "${alt_name}" "${alt_bin}"
+        else
+            warning "Binary ${alt_name}${DEFAULT_PHP_VERSION} not installed, skipping its default alternative."
+        fi
+    done
 fi

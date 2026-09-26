@@ -28,7 +28,8 @@ function init_tools_install() {
 
     run cp -f bin/lemper-cli.sh /usr/local/bin/lemper-cli && \
     run chmod ugo+x /usr/local/bin/lemper-cli && \
-    run ln -sf /usr/local/bin/lemper-cli /usr/bin/lemper-cli
+    run ln -sf /usr/local/bin/lemper-cli /usr/bin/lemper-cli && \
+    run ln -sf /usr/local/bin/lemper-cli /usr/bin/lemper
 
     [ ! -d /etc/lemper/cli-plugins ] && run mkdir -p /etc/lemper/cli-plugins
 
@@ -37,6 +38,9 @@ function init_tools_install() {
 
     run cp -f lib/lemper-adduser.sh /etc/lemper/cli-plugins/lemper-adduser && \
     run chmod ugo+x /etc/lemper/cli-plugins/lemper-adduser
+
+    run cp -f lib/lemper-package.sh /etc/lemper/cli-plugins/lemper-package && \
+    run chmod ugo+x /etc/lemper/cli-plugins/lemper-package
 
     run cp -f lib/lemper-site.sh /etc/lemper/cli-plugins/lemper-site && \
     run chmod ugo+x /etc/lemper/cli-plugins/lemper-site
@@ -67,6 +71,13 @@ function init_tools_install() {
 
     run cp -f lib/lemper-bench.sh /etc/lemper/cli-plugins/lemper-bench && \
     run chmod ugo+x /etc/lemper/cli-plugins/lemper-bench
+
+    run cp -f lib/lemper-docker.sh /etc/lemper/cli-plugins/lemper-docker && \
+    run chmod ugo+x /etc/lemper/cli-plugins/lemper-docker
+
+    # Curated Docker app market templates (used by 'lemper-cli docker install').
+    [ ! -d /usr/share/lemper/docker/apps ] && run mkdir -p /usr/share/lemper/docker/apps
+    run cp -rf docker/apps/. /usr/share/lemper/docker/apps/
 
     # Remove old LEMPer CLI tool.
     [ -d /usr/local/lib/lemper ] && run rm -fr /usr/local/lib/lemper/lemper-*
@@ -102,9 +113,9 @@ function init_tools_install() {
 
     # Overwrite existing files.
     run curl -sSL -o /usr/share/nginx/html/lcp/dbadmin/index.php \
-        https://github.com/adminerevo/adminerevo/releases/download/v4.8.4/adminer-4.8.4.php 
+        "$(gh_url "https://github.com/adminerevo/adminerevo/releases/download/v4.8.4/adminer-4.8.4.php")" 
     run curl -sSL -o /usr/share/nginx/html/lcp/dbadmin/editor.php \
-        https://github.com/adminerevo/adminerevo/releases/download/v4.8.4/editor-4.8.4.php \
+        "$(gh_url "https://github.com/adminerevo/adminerevo/releases/download/v4.8.4/editor-4.8.4.php")" \
 
     [ -f /usr/share/nginx/html/lcp/dbadmin/index.php ] && echo_ok "OK"
 
@@ -115,14 +126,14 @@ function init_tools_install() {
     echo -n "Installing file manager TinyFileManager..."
 
     if [ ! -d /usr/share/nginx/html/lcp/filemanager/config ]; then
-        run git clone -q --depth=1 --branch=lemperfm_1.3.0 https://github.com/joglomedia/tinyfilemanager.git \
+        run git clone -q --depth=1 --branch=lemperfm_1.3.0 "$(gh_url "https://github.com/joglomedia/tinyfilemanager.git")" \
             /usr/share/nginx/html/lcp/filemanager
     else
         local CURRENT_DIR && \
         CURRENT_DIR=$(pwd)
         run cd /usr/share/nginx/html/lcp/filemanager && \
         run curl -sSL -o /usr/share/nginx/html/lcp/filemanager/index.php \
-            https://raw.githubusercontent.com/joglomedia/tinyfilemanager/lemperfm_1.3.0/index.php && \
+            "$(gh_url "https://raw.githubusercontent.com/joglomedia/tinyfilemanager/lemperfm_1.3.0/index.php")" && \
         run cd "${CURRENT_DIR}" || return 1
     fi
 
@@ -139,7 +150,7 @@ function init_tools_install() {
     echo -n "Installing phpOpCacheStatus panel..."
 
     run curl -sSL -o /usr/share/nginx/html/lcp/opcache.php \
-        https://raw.github.com/rlerdorf/opcache-status/master/opcache.php
+        "$(gh_url "https://raw.github.com/rlerdorf/opcache-status/master/opcache.php")"
     [ -f /usr/share/nginx/html/lcp/opcache.php ] && echo_ok "OK"
 
     # Install phpMemcachedAdmin Web Admin.
@@ -147,7 +158,7 @@ function init_tools_install() {
 
     if [ ! -d /usr/share/nginx/html/lcp/memcadmin/ ]; then
         run git clone -q --depth=1 --branch=master \
-            https://github.com/elijaa/phpmemcachedadmin.git /usr/share/nginx/html/lcp/memcadmin/
+            "$(gh_url "https://github.com/elijaa/phpmemcachedadmin.git")" /usr/share/nginx/html/lcp/memcadmin/
     else
         local CURRENT_DIR && \
         CURRENT_DIR=$(pwd)

@@ -1,0 +1,20 @@
+# Vaultwarden — self-hosted password manager (Bitwarden-compatible)
+# Pinned to a fixed stable release (never :latest).
+# Port 8000 on the host; never 80/443 (owned by LEMPer nginx).
+
+services:
+  vaultwarden:
+    image: vaultwarden/server:1.37.3
+    container_name: vaultwarden
+    restart: unless-stopped
+    ports:
+      # Bound to loopback only: Docker's iptables rules bypass UFW, so never
+      # publish app ports on 0.0.0.0. Public access goes through the LEMPer
+      # nginx reverse proxy (see DOCKER.md).
+      - "127.0.0.1:${VAULT_PORT:-8000}:80"
+    environment:
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - SIGNUPS_ALLOWED=${SIGNUPS_ALLOWED:-false}
+      - DOMAIN=${DOMAIN:-}
+    volumes:
+      - /home/docker/vaultwarden/data:/data

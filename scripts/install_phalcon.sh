@@ -52,8 +52,8 @@ function install_phalcon() {
         # Install Zephir parser.
         echo "Installing Zephir parser..."
 
-        ZEPHIR_PARSER_BRANCH=$(git ls-remote https://github.com/phalcon/php-zephir-parser v1.* | sort -t/ -k3 -Vr | head -n1 | awk -F/ '{ print $NF }')
-        run git clone --depth=1 --branch="${ZEPHIR_PARSER_BRANCH}" -q https://github.com/phalcon/php-zephir-parser.git && \
+        ZEPHIR_PARSER_BRANCH=$(git ls-remote "$(gh_url "https://github.com/phalcon/php-zephir-parser")" v1.* | sort -t/ -k3 -Vr | head -n1 | awk -F/ '{ print $NF }')
+        run git clone --depth=1 --branch="${ZEPHIR_PARSER_BRANCH}" -q "$(gh_url "https://github.com/phalcon/php-zephir-parser.git")" && \
         run cd php-zephir-parser || return 1
 
         if [ -n "${PHPv}" ]; then
@@ -74,8 +74,8 @@ function install_phalcon() {
         if [ -n "${PHPCOMPOSER_BIN}" ]; then
             run "${PHP_BIN}" "${PHPCOMPOSER_BIN}" global require phalcon/zephir
         else
-            ZEPHIR_BRANCH=${PHP_ZEPHIR_VERSION:-$(git ls-remote https://github.com/phalcon/zephir 0.12.* | sort -t/ -k3 -Vr | head -n1 | awk -F/ '{ print $NF }')}
-            run git clone --depth=1 --branch="${ZEPHIR_BRANCH}" -q https://github.com/phalcon/zephir.git && \
+            ZEPHIR_BRANCH=${PHP_ZEPHIR_VERSION:-$(git ls-remote "$(gh_url "https://github.com/phalcon/zephir")" 1.* | sort -t/ -k3 -Vr | head -n1 | awk -F/ '{ print $NF }')}
+            run git clone --depth=1 --branch="${ZEPHIR_BRANCH}" -q "$(gh_url "https://github.com/phalcon/zephir.git")" && \
             run cd zephir && \
             run "${PHP_BIN}" "${PHPCOMPOSER_BIN}" install && \
             run cd ../ || return 1
@@ -86,7 +86,7 @@ function install_phalcon() {
     echo "PSR extension is required by Phalcon, install it first."
 
     if [ ! -d php-psr ]; then
-        run git clone https://github.com/jbboehr/php-psr.git && \
+        run git clone "$(gh_url "https://github.com/jbboehr/php-psr.git")" && \
         run cd php-psr || return 1
     else
         run cd php-psr && \
@@ -112,18 +112,18 @@ function install_phalcon() {
         PHALCON_VERSION="master"
     fi
 
-    CPHALCON_SOURCE="https://github.com/phalcon/cphalcon/archive/v${PHALCON_VERSION}.tar.gz"
+    CPHALCON_SOURCE="$(gh_url "https://github.com/phalcon/cphalcon/archive/v${PHALCON_VERSION}.tar.gz")"
 
     if curl -sLI "${CPHALCON_SOURCE}" | grep -q "HTTP/[.12]* [2].."; then
         run curl -sSL -o "cphalcon-${PHALCON_VERSION}.tar.gz" "${CPHALCON_SOURCE}" && \
         run tar -zxf "cphalcon-${PHALCON_VERSION}.tar.gz" && \
         run cd "cphalcon-${PHALCON_VERSION}/build" || return 1
-    elif curl -sLI "https://raw.githubusercontent.com/phalcon/cphalcon/${PHALCON_VERSION}/README.md" \
+    elif curl -sLI "$(gh_url "https://raw.githubusercontent.com/phalcon/cphalcon/${PHALCON_VERSION}/README.md")" \
         | grep -q "HTTP/[.12]* [2].."; then
 
         # Clone repository.
         if [ ! -d cphalcon ]; then
-            run git clone https://github.com/phalcon/cphalcon.git && \
+            run git clone "$(gh_url "https://github.com/phalcon/cphalcon.git")" && \
             run cd cphalcon && \
             run git checkout "${PHALCON_VERSION}" && \
             run cd build || return 1
@@ -298,7 +298,7 @@ function init_phalcon_install() {
     if [ -n "${OPT_PHALCON_VERSION}" ]; then
         PHP_PHALCON_VERSION=${OPT_PHALCON_VERSION}
     else
-        PHP_PHALCON_VERSION=${PHP_PHALCON_VERSION:-"4.0.2"}
+        PHP_PHALCON_VERSION=${PHP_PHALCON_VERSION:-"5.20.3"}
     fi
 
     # PHP version.
@@ -361,8 +361,8 @@ function init_phalcon_install() {
             echo "Which version of cPhalcon to be installed?"
             echo "Supported cPhalcon versions:"
             echo "  1). cPhalcon 3.x (Supported PHP versions: 5.6, 7.0, 7.1) [EOL]"
-            echo "  2). cPhalcon 4.x (Supported PHP versions: 7.3, 7.4) [Latest]"
-            echo "  3). cPhalcon 5.x (Supported PHP versions: 7.4, 8.0) [Alpha]"
+            echo "  2). cPhalcon 4.x (Supported PHP versions: 7.3, 7.4) [EOL]"
+            echo "  3). cPhalcon 5.x (Supported PHP versions: 8.0+) [Latest stable]"
             echo "Check the cPhalcon available version from their Github release page!"
             echo "-----------------------------------------------------------------------"
             [ -n "${PHP_PHALCON_VERSION}" ] && \
@@ -370,8 +370,8 @@ function init_phalcon_install() {
 
             while [[ ${SELECTED_PHALCON} != "1" && ${SELECTED_PHALCON} != "2" && ${SELECTED_PHALCON} != "3" && \
                 ${SELECTED_PHALCON} != "3.x" && ${SELECTED_PHALCON} != "4.x" && ${SELECTED_PHALCON} != "5.x" && \
-                $(curl -sLI "https://github.com/phalcon/cphalcon/archive/v${SELECTED_PHALCON}.tar.gz" | grep "HTTP/[.12]* [2]..") == "" && \
-                $(curl -sLI "https://raw.githubusercontent.com/phalcon/cphalcon/${SELECTED_PHALCON}/README.md" | grep "HTTP/[.12]* [2]..") == ""
+                $(curl -sLI "$(gh_url "https://github.com/phalcon/cphalcon/archive/v${SELECTED_PHALCON}.tar.gz")" | grep "HTTP/[.12]* [2]..") == "" && \
+                $(curl -sLI "$(gh_url "https://raw.githubusercontent.com/phalcon/cphalcon/${SELECTED_PHALCON}/README.md")" | grep "HTTP/[.12]* [2]..") == ""
             ]]; do
                 read -rp "Select an option [1-3] or a cPhalcon version number: " -i "${PHP_PHALCON_VERSION}" -e SELECTED_PHALCON
             done
@@ -385,7 +385,7 @@ function init_phalcon_install() {
                 PHALCON_VERSION="4.1.2" # The latest version from Phalcon 4 branch.
             ;;
             3|"5.x")
-                PHALCON_VERSION="v5.0.0-alpha.2" # The latest version from Phalcon 4 branch.
+                PHALCON_VERSION="5.20.3" # The latest version from Phalcon 5 branch.
             ;;
             *)
                 PHALCON_VERSION=${SELECTED_PHALCON}
@@ -406,8 +406,8 @@ function init_phalcon_install() {
             echo "  3). PHP 7.1 (EOL)"
             echo "  4). PHP 7.2 (EOL)"
             echo "  5). PHP 7.3 (EOL)"
-            echo "  6). PHP 7.4 (SFO)"
-            echo "  7). PHP 8.0 (Latest stable)"
+            echo "  6). PHP 7.4 (EOL)"
+            echo "  7). PHP 8.0 (EOL)"
             echo "  8). All available versions"
             echo "--------------------------------------------"
             [ -n "${PHP_VERSION}" ] && \

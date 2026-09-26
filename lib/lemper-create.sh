@@ -772,6 +772,10 @@ function install_wordpress() {
 
             run sudo -u "${USERNAME}" -i -- wp-cli config create --dbname="${APP_DB_NAME}" \
                 --dbuser="${APP_DB_USER}" --dbpass="${APP_DB_PASS}" --dbprefix=ls_ --path="${WEBROOT}"
+
+            # wp-config.php holds the DB password: keep it readable by the site
+            # owner (the PHP-FPM pool user) but not by other tenants.
+            run chmod 0640 "${WEBROOT}/wp-config.php"
         else
             info "It seems that WordPress files already exists."
         fi
@@ -806,14 +810,19 @@ function init_lemper_create() {
     SERVERNAME=""
     WEBROOT=""
     FRAMEWORK="default"
-    PHP_VERSION="8.1"
+    PHP_VERSION="8.4"
     INSTALL_APP=false
     WPMS_SUBDOMAINS=""
     ENABLE_FASTCGI_CACHE=false
     ENABLE_SSL=false
     ENABLE_WILDCARD_DOMAIN=false
     ENABLE_FAIL2BAN=false
-    TMPDIR="/tmp/lemper"
+    # Private temp dir (mktemp): the old fixed /tmp/lemper allowed a local
+    # user to pre-plant symlinks/files that root would then merge into the
+    # new webroot. Cleaned up automatically on exit.
+    TMPDIR="$(mktemp -d /tmp/lemper.XXXXXX)"
+    chmod 0700 "${TMPDIR}"
+    trap 'rm -rf "${TMPDIR}"' EXIT
 
     # Dry run (test mode).
     DRYRUN=false
@@ -1072,11 +1081,17 @@ function init_lemper_create() {
                             echo "Downloading Drupal latest skeleton files..."
 
                             if curl -sLI https://www.drupal.org/download-latest/zip | grep -q "HTTP/[.12]* [2].."; then
-                                run curl -sSL -o "${TMPDIR}/drupal.zip" https://www.drupal.org/download-latest/zip && \
-                                run unzip -q "${TMPDIR}/drupal.zip" -d "${TMPDIR}" && \
-                                run rsync -rq ${TMPDIR}/drupal-*/ "${WEBROOT}" && \
-                                run rm -f "${TMPDIR}/drupal.zip" && \
-                                run rm -fr ${TMPDIR}/drupal-*/
+                                run curl -sSL -o "${TMPDIR}/drupal.zip" https://www.drupal.org/download-latest/zip
+                                run unzip -q "${TMPDIR}/drupal.zip" -d "${TMPDIR}"
+                                # Resolve the extracted directory without an unquoted glob.
+                                _drupal_src=( "${TMPDIR}"/drupal-*/ )
+                                if [[ -d "${_drupal_src[0]}" ]]; then
+                                    run rsync -rq "${_drupal_src[0]}" "${WEBROOT}"
+                                    run rm -rf "${_drupal_src[0]}"
+                                else
+                                    error "Drupal extraction produced no drupal-* directory."
+                                fi
+                                run rm -f "${TMPDIR}/drupal.zip"
                             else
                                 error "Something went wrong while downloading Drupal files."
                             fi
@@ -1210,14 +1225,43 @@ function init_lemper_create() {
                             if [[ -n "${PHP_COMPOSER_BIN}" ]]; then
                                 run composer create-project --prefer-dist symfony/website-skeleton "${WEBROOT}"
                             else
-                                warning "Symfony CLI not found, trying to install it first..."
-                                run bash -c "curl -sSL https://get.symfony.com/cli/installer -o - | bash"
+                                warning "Symfony CLI not found, installing it from a verified release..."
+                                # Install from the GitHub release .deb after SHA256 verification
+                                # against a hash pinned in this repo (replaces the old
+                                # unverified curl|bash installer). checksums.txt from the
+                                # same release is NOT trusted on its own: a compromised
+                                # release could ship matching checksums.
+                                local SF_VER="${SYMFONY_CLI_VERSION:-5.20.0}"
+                                SF_VER="${SF_VER#v}"
+                                local SF_ARCH
+                                case "$(uname -m)" in
+                                    x86_64) SF_ARCH="amd64" ;;
+                                    aarch64|arm64) SF_ARCH="arm64" ;;
+                                    *) fail "Unsupported architecture $(uname -m) for Symfony CLI." ;;
+                                esac
+                                # Pinned SHA-256 per architecture, verified 2026-09-25.
+                                # Bump together with SF_VER; anything unpinned fails closed.
+                                local SF_SHA256=""
+                                if [[ "${SF_VER}" == "5.20.0" ]]; then
+                                    case "${SF_ARCH}" in
+                                        amd64) SF_SHA256="26c5b38d2ef13f78d188f6ef4788b6011357f62fb074e698f6c4db7afeb7b71d" ;;
+                                        arm64) SF_SHA256="d6b10cc1a2dff9f40ef97e445f06fbd5e21b869b6960276295754a3fd419e684" ;;
+                                    esac
+                                fi
+                                if [[ -z "${SF_SHA256}" ]]; then
+                                    fail "No pinned checksum for Symfony CLI ${SF_VER} (${SF_ARCH}); refusing to install an unverified binary."
+                                fi
+                                local SF_DEB="symfony-cli_${SF_VER}_${SF_ARCH}.deb"
+                                local SF_BASE="https://github.com/symfony-cli/symfony-cli/releases/download/v${SF_VER}"
 
-                                if [[ -f "${HOME}/.symfony/bin/symfony" ]]; then
-                                    run cp -f "${HOME}/.symfony/bin/symfony" /usr/local/bin/symfony
-                                    run chmod ugo+x /usr/local/bin/symfony
-                                else
-                                    run export PATH="${HOME}/.symfony/bin:${PATH}"
+                                run curl -sSL -o "${TMPDIR}/${SF_DEB}" "${SF_BASE}/${SF_DEB}"
+
+                                if [[ "${DRYRUN}" != true ]]; then
+                                    if ! ( cd "${TMPDIR}" && printf '%s  %s\n' "${SF_SHA256}" "${SF_DEB}" | sha256sum -c --status - ); then
+                                        fail "Symfony CLI checksum verification failed for ${SF_DEB}, aborting installation."
+                                    fi
+                                    run dpkg -i "${TMPDIR}/${SF_DEB}" || run apt-get install -f -q -y
+                                    run rm -f "${TMPDIR}/${SF_DEB}"
                                 fi
 
                                 run sudo -u "${USERNAME}" -i -- symfony new "${WEBROOT}" --full

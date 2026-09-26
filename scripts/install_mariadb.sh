@@ -26,7 +26,7 @@ function add_mariadb_repo() {
     echo "Adding MariaDB repository..."
 
     MYSQL_SERVER=${MYSQL_SERVER:-"mariadb"}
-    MYSQL_VERSION=${MYSQL_VERSION:-"11.1"}
+    MYSQL_VERSION=${MYSQL_VERSION:-"12.3"}
 
     # Fallback to oldest version if OS release is not supported.
     case "${RELEASE_NAME}" in
@@ -38,35 +38,34 @@ function add_mariadb_repo() {
         ;;
     esac
 
-    if [[ "${MYSQL_REPO_MIRROR_URL}x" == "x" ]]; then
-        # Add MariaDB official repo.
-        MARIADB_REPO_SETUP_URL="https://downloads.mariadb.com/MariaDB/mariadb_repo_setup"
-
-        if curl -sLI "${MARIADB_REPO_SETUP_URL}" | grep -q "HTTP/[.12]* [2].."; then
-            run curl -sSL -o "${BUILD_DIR}/mariadb_repo_setup" "${MARIADB_REPO_SETUP_URL}" && \
-            run bash "${BUILD_DIR}/mariadb_repo_setup" --mariadb-server-version="mariadb-${MYSQL_VERSION}" \
-                --os-type="${DISTRIB_NAME}" --os-version="${RELEASE_NAME}" --skip-maxscale --skip-tools && \
-            run apt-get update -q -y
-        else
-            info "MariaDB repo installer not found, trying to use pre-downloaded script."
-            run bash "${BASE_DIR}/mariadb_repo_setup" --mariadb-server-version="mariadb-${MYSQL_VERSION}" \
-                --os-type="${DISTRIB_NAME}" --os-version="${RELEASE_NAME}" --skip-maxscale --skip-tools && \
-            run apt-get update -q -y
-        fi
-    else
-        # Add MariaDB mirror repo.
-        local MARIADB_REPO_URL="${MYSQL_REPO_MIRROR_URL}/repo/${MYSQL_VERSION}/${DISTRIB_NAME}"
+    # Add a MariaDB APT repository using a dedicated keyring with signed-by.
+    # APT verifies the Release file signature against the keyring, so no
+    # remote setup script is ever downloaded and executed (the previous
+    # mariadb_repo_setup flow ran an unverified script as root).
+    add_mariadb_repo() {
+        local MARIADB_REPO_URL="${1}"
+        local MARIADB_KEYRING="/usr/share/keyrings/mariadb-keyring.gpg"
 
         if curl -sLI "${MARIADB_REPO_URL}/dists/${RELEASE_NAME}/Release" | grep -q "HTTP/[.12]* [2].."; then
-            run bash -c "curl -fsSL https://mariadb.org/mariadb_release_signing_key.pgp | gpg --dearmor --yes -o /usr/share/keyrings/mariadb-keyring.gpg" && \
-            run chmod 644 "/usr/share/keyrings/mariadb-keyring.gpg" && \
-            run touch "/etc/apt/sources.list.d/mariadb.list" && \
-            run bash -c "echo 'deb [signed-by=/usr/share/keyrings/mariadb-keyring.gpg] ${MARIADB_REPO_URL} ${RELEASE_NAME} main' > /etc/apt/sources.list.d/mariadb.list" && \
-            run bash -c "echo '#deb-src [signed-by=/usr/share/keyrings/mariadb-keyring.gpg] ${MARIADB_REPO_URL} ${RELEASE_NAME} main' >> /etc/apt/sources.list.d/mariadb.list" && \
+            run bash -c "curl -fsSL https://mariadb.org/mariadb_release_signing_key.pgp | gpg --dearmor --yes -o ${MARIADB_KEYRING}" && \
+            run chmod 644 "${MARIADB_KEYRING}" && \
+            printf '%s\n' "deb [signed-by=${MARIADB_KEYRING}] ${MARIADB_REPO_URL} ${RELEASE_NAME} main" | \
+                run tee /etc/apt/sources.list.d/mariadb.list > /dev/null && \
+            printf '%s\n' "#deb-src [signed-by=${MARIADB_KEYRING}] ${MARIADB_REPO_URL} ${RELEASE_NAME} main" | \
+                run tee -a /etc/apt/sources.list.d/mariadb.list > /dev/null && \
             run apt-get update --allow-releaseinfo-change -q -y
         else
-            error "MariaDB ${MYSQL_VERSION} release at mirror ${MYSQL_REPO_MIRROR_URL} not found."
+            error "MariaDB ${MYSQL_VERSION} release at ${MARIADB_REPO_URL} not found."
         fi
+    }
+
+    if [[ "${MYSQL_REPO_MIRROR_URL}x" == "x" ]]; then
+        # Add MariaDB official repo. mirror.mariadb.org redirects to a nearby
+        # mirror; APT still verifies the Release signature via the keyring.
+        add_mariadb_repo "https://mirror.mariadb.org/repo/${MYSQL_VERSION}/${DISTRIB_NAME}"
+    else
+        # Add MariaDB mirror repo.
+        add_mariadb_repo "${MYSQL_REPO_MIRROR_URL}/repo/${MYSQL_VERSION}/${DISTRIB_NAME}"
     fi
 }
 
@@ -203,7 +202,8 @@ function init_mariadb_install() {
                                 FLUSH PRIVILEGES;"
 
                         # Root password is blank for newly installed MariaDB (MySQL).
-                        if mariadb --user=root --password="${MYSQL_ROOT_PASSWORD}" -e "${SQL_QUERY}"; then
+                        # mysql_root uses MYSQL_PWD so the password never appears in argv.
+                        if mysql_root -e "${SQL_QUERY}"; then
                             success "Securing MariaDB server installation has been done."
                         else
                             error "Unable to secure MariaDB server installation."
@@ -282,12 +282,12 @@ function enable_mariabackup() {
     export MYSQL_ROOT_PASSWORD
 
     # Create default LEMPer database user if not exists.
-    if ! mariadb -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT User FROM mysql.user;" | grep -q "${MARIABACKUP_USER}"; then
+    if ! mysql_root -e "SELECT User FROM mysql.user;" | grep -q "${MARIABACKUP_USER}"; then
         # Create mariabackup user.
         SQL_QUERY="CREATE USER '${MARIABACKUP_USER}'@'localhost' IDENTIFIED BY '${MARIABACKUP_PASS}';
                 GRANT RELOAD, PROCESS, LOCK TABLES, REPLICATION CLIENT ON *.* TO '${MARIABACKUP_USER}'@'localhost';"
 
-        run mariadb -u root -p"${MYSQL_ROOT_PASSWORD}" -e "${SQL_QUERY}"
+        run mysql_root -e "${SQL_QUERY}"
 
         # Update my.cnf
         MARIABACKUP_CNF="###################################
@@ -300,18 +300,17 @@ password=${MARIABACKUP_PASS}
 open_files_limit=65535
 "
 
-        if [[ -d /etc/mysql/mariadb.conf.d ]]; then
-            run touch /etc/mysql/mariadb.conf.d/50-mariabackup.cnf
-            run bash -c "echo '${MARIABACKUP_CNF}' > /etc/mysql/mariadb.conf.d/50-mariabackup.cnf"
-        else
-            run bash -c "echo -e '\n${MARIABACKUP_CNF}' >> /etc/mysql/my.cnf"
-        fi
+        # Write the credential file with root-only permissions and without
+        # `bash -c` interpolation of the password.
+        run mkdir -p /etc/mysql/mariadb.conf.d
+        printf '%s\n' "${MARIABACKUP_CNF}" | run tee /etc/mysql/mariadb.conf.d/50-mariabackup.cnf > /dev/null
+        run chmod 0600 /etc/mysql/mariadb.conf.d/50-mariabackup.cnf
 
         # Save config.
         save_config -e "MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}\nMARIABACKUP_USERNAME=${MARIABACKUP_USER}\nMARIABACKUP_PASSWORD=${MARIABACKUP_PASS}"
 
-        # Save log.
-        save_log -e "MariaDB server credentials.\nMySQL Root Password: ${MYSQL_ROOT_PASSWORD}, MariaBackup DB Username: ${MARIABACKUP_USER}, MariaBackup DB Password: ${MARIABACKUP_PASS}\nSave this credential and use it to authenticate your MySQL database connection."
+        # Save log (no plaintext secrets: credentials live in /etc/lemper/lemper.conf, 0600).
+        save_log -e "MariaDB server credentials generated.\nMariaBackup DB user: ${MARIABACKUP_USER}\nAll credentials stored in /etc/lemper/lemper.conf (mode 0600, root-only)."
     else
         info "It seems that user '${MARIABACKUP_USER}' already exists. You can add mariabackup user manually!"
     fi

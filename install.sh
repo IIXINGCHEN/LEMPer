@@ -61,6 +61,9 @@ run init_log
 # Init config.
 run init_config
 
+# Apply China APT archive mirrors when region=cn (no-op otherwise).
+run lemper_apply_apt_mirrors
+
 ### Install dependencies packages ###
 if [ -f ./scripts/install_dependencies.sh ]; then
     echo ""
@@ -94,6 +97,12 @@ fi
 if [ -f ./scripts/install_php.sh ]; then
     echo ""
     . ./scripts/install_php.sh
+fi
+
+### PHP-FPM systemd cgroup resource limits (no-op when unconfigured) ###
+if [ -f ./scripts/apply_fpm_limits.sh ]; then
+    echo ""
+    . ./scripts/apply_fpm_limits.sh
 fi
 
 ### Phalcon PHP installation ###
@@ -132,6 +141,12 @@ if [ -f ./scripts/install_memcached.sh ]; then
     . ./scripts/install_memcached.sh
 fi
 
+### Node.js installation ###
+if [ -f ./scripts/install_nodejs.sh ]; then
+    echo ""
+    . ./scripts/install_nodejs.sh
+fi
+
 ### Imagick installation ###
 if [ -f ./scripts/install_imagemagick.sh ]; then
     echo ""
@@ -161,6 +176,36 @@ fi
 if [ -f ./scripts/install_fail2ban.sh ]; then
     echo ""
     . ./scripts/install_fail2ban.sh
+fi
+
+### CrowdSec, modern intrusion prevention software. ###
+if [ -f ./scripts/install_crowdsec.sh ]; then
+    echo ""
+    . ./scripts/install_crowdsec.sh
+fi
+
+### Monit, server monitoring with alerting. ###
+if [ -f ./scripts/install_monit.sh ]; then
+    echo ""
+    . ./scripts/install_monit.sh
+fi
+
+### LEMPer automated backup (Restic) ###
+if [ -f ./scripts/install_backup.sh ]; then
+    echo ""
+    . ./scripts/install_backup.sh
+fi
+
+### Jailkit, chrooted SFTP jail. ###
+if [ -f ./scripts/install_jailkit.sh ]; then
+    echo ""
+    . ./scripts/install_jailkit.sh
+fi
+
+### Docker Engine + Docker Compose plugin. ###
+if [ -f ./scripts/install_docker.sh ]; then
+    echo ""
+    . ./scripts/install_docker.sh
 fi
 
 ### LEMPer tools installation ###

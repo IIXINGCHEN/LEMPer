@@ -36,6 +36,7 @@ function configure_nginx_files() {
 
     # Copy configuration directories
     run cp -fr "${SOURCE_DIR}/etc/nginx/conf.d" /etc/nginx/
+    run cp -f "${SOURCE_DIR}/etc/nginx/cors" /etc/nginx/ 2>/dev/null || true
     run cp -fr "${SOURCE_DIR}/etc/nginx/includes" /etc/nginx/
     run cp -fr "${SOURCE_DIR}/etc/nginx/vhost" /etc/nginx/
 

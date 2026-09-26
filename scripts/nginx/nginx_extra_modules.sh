@@ -38,7 +38,7 @@ function install_ngx_brotli() {
         run git submodule update --init -q && \
         run cd "${NGINX_EXTRA_MODULE_DIR}" || return 1
     else
-        run git clone https://github.com/google/ngx_brotli.git "${NGINX_EXTRA_MODULE_DIR}/ngx_brotli" && \
+        run git clone "$(gh_url "https://github.com/google/ngx_brotli.git")" "${NGINX_EXTRA_MODULE_DIR}/ngx_brotli" && \
         run cd "${NGINX_EXTRA_MODULE_DIR}/ngx_brotli" && \
         run git checkout master -q && \
         run git submodule update --init -q && \
@@ -140,7 +140,7 @@ function install_maxmind_library() {
         fi
     else
         if [[ ! -d libmaxminddb ]]; then
-            run git clone --recursive https://github.com/maxmind/libmaxminddb.git && \
+            run git clone --recursive "$(gh_url "https://github.com/maxmind/libmaxminddb.git")" && \
             run cd libmaxminddb || return 1
         else
             run cd libmaxminddb && \
@@ -244,10 +244,10 @@ function install_ngx_lua() {
     local NB_PROC
     NB_PROC=$(get_cpu_cores)
 
-    local LUA_JIT_VERSION=${LUA_JIT_VERSION:-"v2.1-20211210"}
-    local LUA_RESTY_CORE_VERSION=${LUA_RESTY_CORE_VERSION:-"v0.1.22"}
-    local LUA_RESTY_LRUCACHE_VERSION=${LUA_RESTY_LRUCACHE_VERSION:-"v0.11"}
-    local LUA_NGINX_MODULE_VERSION=${LUA_NGINX_MODULE_VERSION:-"v0.10.26"}
+    local LUA_JIT_VERSION=${LUA_JIT_VERSION:-"v2.1-20260914"}
+    local LUA_RESTY_CORE_VERSION=${LUA_RESTY_CORE_VERSION:-"v0.1.32"}
+    local LUA_RESTY_LRUCACHE_VERSION=${LUA_RESTY_LRUCACHE_VERSION:-"v0.15"}
+    local LUA_NGINX_MODULE_VERSION=${LUA_NGINX_MODULE_VERSION:-"v0.10.31"}
 
     # Lua requires NDK
     NGX_HTTP_NDK=true
@@ -259,7 +259,7 @@ function install_ngx_lua() {
     if [[ -d luajit2 ]]; then
         run cd luajit2 && run git pull
     else
-        run git clone --branch="${LUA_JIT_VERSION}" --single-branch https://github.com/openresty/luajit2.git && \
+        run git clone --branch="${LUA_JIT_VERSION}" --single-branch "$(gh_url "https://github.com/openresty/luajit2.git")" && \
         run cd luajit2 || return 1
     fi
 
@@ -272,7 +272,7 @@ function install_ngx_lua() {
     if [[ -d lua-resty-core ]]; then
         run cd lua-resty-core && run git pull
     else
-        run git clone --branch="${LUA_RESTY_CORE_VERSION}" --single-branch https://github.com/openresty/lua-resty-core.git && \
+        run git clone --branch="${LUA_RESTY_CORE_VERSION}" --single-branch "$(gh_url "https://github.com/openresty/lua-resty-core.git")" && \
         run cd lua-resty-core || return 1
     fi
 
@@ -284,7 +284,7 @@ function install_ngx_lua() {
     if [[ -d lua-resty-lrucache ]]; then
         run cd lua-resty-lrucache && run git pull
     else
-        run git clone --branch="${LUA_RESTY_LRUCACHE_VERSION}" --single-branch https://github.com/openresty/lua-resty-lrucache.git && \
+        run git clone --branch="${LUA_RESTY_LRUCACHE_VERSION}" --single-branch "$(gh_url "https://github.com/openresty/lua-resty-lrucache.git")" && \
         run cd lua-resty-lrucache || return 1
     fi
 
@@ -386,7 +386,7 @@ function install_ngx_upstream_fair() {
         run git pull && \
         run cd "${NGINX_EXTRA_MODULE_DIR}" || return 1
     else
-        run git clone --branch="lemper" --single-branch https://github.com/joglomedia/nginx-upstream-fair.git "${NGINX_EXTRA_MODULE_DIR}/nginx-upstream-fair"
+        run git clone --branch="lemper" --single-branch "$(gh_url "https://github.com/joglomedia/nginx-upstream-fair.git")" "${NGINX_EXTRA_MODULE_DIR}/nginx-upstream-fair"
 
         echo "Patching nginx-upstream-fair module..."
         clone_or_update_repo "https://github.com/alibaba-archive/tengine-patches.git" "tengine-patches" "master"

@@ -208,9 +208,9 @@ function remove_vhost() {
         echo "+-------------------------------+"
 
         # Show user's databases
-        #run mysql -u "${MYSQL_USER}" -p"${MYSQL_PASS}" -e "SHOW DATABASES;" | grep -vE "Database|mysql|*_schema"
+        #run mysql_as "${MYSQL_USER}" "${MYSQL_PASS}" -e "SHOW DATABASES;" | grep -vE "Database|mysql|*_schema"
         local DATABASES && \
-        DATABASES=$(mysql -u "${MYSQL_USER}" -p"${MYSQL_PASS}" -e "SHOW DATABASES;" | grep -vE "Database|mysql|*_schema")
+        DATABASES=$(mysql_as "${MYSQL_USER}" "${MYSQL_PASS}" -e "SHOW DATABASES;" | grep -vE "Database|mysql|*_schema")
 
         if [[ -n "${DATABASES}" ]]; then
             printf '%s\n' "${DATABASES}"
@@ -225,9 +225,14 @@ function remove_vhost() {
 		done
 
         if [[ -d "/var/lib/mysql/${DBNAME}" ]]; then
-            echo "Deleting database ${DBNAME}..."
-            run mysql -u "${MYSQL_USER}" -p"${MYSQL_PASS}" -e "DROP DATABASE ${DBNAME}"
-            success "Database '${DBNAME}' dropped."
+            # Validate before interpolating into SQL / filesystem path.
+            if ! validate_db_identifier "${DBNAME}"; then
+                error "Invalid database name '${DBNAME}'."
+            else
+                echo "Deleting database ${DBNAME}..."
+                run mysql_as "${MYSQL_USER}" "${MYSQL_PASS}" -e "DROP DATABASE ${DBNAME}"
+                success "Database '${DBNAME}' dropped."
+            fi
         else
             info "Sorry, database ${DBNAME} not found. Skipped..."
         fi
@@ -837,7 +842,12 @@ function get_ip_private() {
 function get_ip_public() {
     local SERVER_IP_PRIVATE && SERVER_IP_PRIVATE=$(get_ip_private)
     local SERVER_IP_PUBLIC && \
-    SERVER_IP_PUBLIC=$(curl -sk --connect-timeout 10 --retry 3 --retry-delay 0 http://ipecho.net/plain)
+    SERVER_IP_PUBLIC=$(curl -s --ipv4 --connect-timeout 10 --retry 3 --retry-delay 0 https://ipecho.net/plain)
+
+    # Fail closed: only accept a syntactically valid IPv4 address.
+    if ! validate_ipv4 "${SERVER_IP_PUBLIC}"; then
+        SERVER_IP_PUBLIC=""
+    fi
 
     # Ugly hack to detect aws-lightsail public IP address.
     if [[ "${SERVER_IP_PRIVATE}" == "${SERVER_IP_PUBLIC}" ]]; then

@@ -105,7 +105,7 @@ function add_ngx_module_arg() {
 # Usage: clone_or_update_repo "repo_url" "local_dir" "branch"
 ##
 function clone_or_update_repo() {
-    local REPO_URL="$1"
+    local REPO_URL="$(gh_url "$1")"
     local LOCAL_DIR="$2"
     local BRANCH="${3:-master}"
     local TARGET_DIR="${NGINX_EXTRA_MODULE_DIR}/${LOCAL_DIR}"

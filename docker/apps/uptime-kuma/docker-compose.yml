@@ -1,0 +1,16 @@
+# Uptime Kuma — self-hosted monitoring (uptime-kuma)
+# Pinned to the supported v2 major tag (upstream SECURITY.md: v1 tags deprecated).
+# Port 3001 on the host; never 80/443 (owned by LEMPer nginx).
+
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:2.5.5
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      # Bound to loopback only: Docker's iptables rules bypass UFW, so never
+      # publish app ports on 0.0.0.0. Public access goes through the LEMPer
+      # nginx reverse proxy (see DOCKER.md).
+      - "127.0.0.1:${KUMA_PORT:-3001}:3001"
+    volumes:
+      - /home/docker/uptime-kuma/data:/app/data

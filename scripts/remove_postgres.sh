@@ -28,7 +28,7 @@ fi
 ##
 function postgres_ctl() {
     local action="${1}"  # start, stop, restart, reload, status, enable, disable, daemon-reload
-    local version="${2:-${POSTGRES_VERSION:-17}}"
+    local version="${2:-${POSTGRES_VERSION:-18}}"
     local cluster="${3:-main}"
 
     # Handle systemd-specific actions (only work with systemctl)
@@ -74,7 +74,7 @@ function postgres_ctl() {
 }
 
 function init_postgres_removal() {
-    local POSTGRES_VERSION=${POSTGRES_VERSION:-"17"}
+    local POSTGRES_VERSION=${POSTGRES_VERSION:-"18"}
     local POSTGRES_SUPERUSER=${POSTGRES_SUPERUSER:-"postgres"}
     #local POSTGRES_PKGS=()
 
@@ -122,7 +122,7 @@ function init_postgres_removal() {
 }
 
 function postgres_remove_config() {
-    local POSTGRES_VERSION=${POSTGRES_VERSION:-"17"}
+    local POSTGRES_VERSION=${POSTGRES_VERSION:-"18"}
     local PGDATA=${POSTGRES_PGDATA:-"/var/lib/postgresql/data"}
 
     # Remove PostgreSQL server config files.

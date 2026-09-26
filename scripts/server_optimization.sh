@@ -87,6 +87,32 @@ EOL
         run sysctl -w fs.inotify.max_user_watches=65535
     fi
 
+    # BBR TCP congestion control (optional, opt-in via ENABLE_BBR).
+    if [[ "${ENABLE_BBR:-false}" == true ]]; then
+        echo "Enabling BBR congestion control..."
+        # Load the module if available; some kernels need it explicitly.
+        # Do NOT use run() here: modprobe may fail in containers/chroots,
+        # and run() exits the script on failure (|| true would never run).
+        modprobe tcp_bbr 2>/dev/null || true
+        if sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr; then
+            if [[ ${DRYRUN} != true ]]; then
+                # Idempotent dedicated drop-in (easy to audit/revert).
+                run bash -c "cat > /etc/sysctl.d/99-lemper-bbr.conf <<EOL
+# BBR congestion control (LEMPer).
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+EOL"
+                run sysctl -w net.core.default_qdisc=fq
+                run sysctl -w net.ipv4.tcp_congestion_control=bbr
+                success "BBR congestion control enabled."
+            else
+                echo "BBR enablement skipped in dry run mode."
+            fi
+        else
+            warning "Kernel lacks BBR support (tcp_bbr unavailable), skipping."
+        fi
+    fi
+
     if [[ ${INSTALL_REDIS} == true ]]; then
         echo "Kernel optimization for Redis..."
 

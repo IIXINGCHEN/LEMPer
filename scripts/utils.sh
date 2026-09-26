@@ -20,19 +20,72 @@ fi
 # Export environment variables.
 ENVFILE=$(echo "${BASE_DIR}/.env" | sed '$ s|\/scripts\/.env$|\/.env|')
 
+# Load a dotenv file WITHOUT executing its values.
+# Only plain KEY=VALUE lines are honored: KEY must be a valid shell identifier
+# and VALUE may be wrapped in single or double quotes (one layer is stripped).
+# Values containing command substitution ($(...) or `...`) are rejected, so a
+# malicious .env can never achieve code execution when the file is loaded.
+function load_dotenv() {
+    local dotenv_file="${1}"
+    local line key val
+
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        # Skip comments, blank lines, and INI-style section headers.
+        [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+        [[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+        [[ "${line}" =~ ^\[[^]]+\][[:space:]]*$ ]] && continue
+
+        # Only accept KEY=VALUE with a valid identifier as KEY.
+        if [[ "${line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+            key="${BASH_REMATCH[1]}"
+            val="${BASH_REMATCH[2]}"
+
+            # Strip one layer of matching surrounding quotes.
+            if [[ "${val}" =~ ^\"(.*)\"$ ]]; then
+                val="${BASH_REMATCH[1]}"
+            elif [[ "${val}" =~ ^\'(.*)\'$ ]]; then
+                val="${BASH_REMATCH[1]}"
+            fi
+
+            # Reject values that could execute code.
+            if [[ "${val}" == *'$('* || "${val}" == *'`'* ]]; then
+                echo "WARNING: ignoring ${key} in ${dotenv_file}: value contains command substitution." >&2
+                continue
+            fi
+
+            printf -v "${key}" '%s' "${val}"
+            export "${key}"
+        fi
+    done < "${dotenv_file}"
+}
+
 if [ -f "${ENVFILE}" ]; then
-    # Clean environemnt first.
-    # shellcheck source=.env.dist
-    # shellcheck disable=SC2046
-    unset $(grep -v '^#' "${ENVFILE}" | grep -v '^\[' | sed -E 's/(.*)=.*/\1/' | xargs)
+    # Clean environment first: unset only valid identifiers found in the file
+    # (the old `unset $(... | xargs)` passed unsanitized words to unset).
+    while IFS= read -r _line || [[ -n "${_line}" ]]; do
+        if [[ "${_line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+            unset "${BASH_REMATCH[1]}"
+        fi
+    done < "${ENVFILE}"
+    unset _line
 
     # shellcheck source=.env.dist
-    # shellcheck disable=SC1094
-    source <(grep -v '^#' "${ENVFILE}" | grep -v '^\[' | sed -E 's|^(.+)=(.*)$|: ${\1=\2}; export \1|g')
+    load_dotenv "${ENVFILE}"
 else
     echo "Environment variables required, but the dotenv file doesn't exist. Copy .env.dist to .env first!"
     exit 1
 fi
+
+# Load download mirror support (region auto-detection + mirror URLs).
+# Safe to source standalone: all URLs fall back to official upstreams.
+# shellcheck disable=SC1091
+if [[ -f "${BASE_DIR}/scripts/lemper-mirrors.sh" ]]; then
+    . "${BASE_DIR}/scripts/lemper-mirrors.sh"
+elif [[ -f "${BASE_DIR}/lemper-mirrors.sh" ]]; then
+    . "${BASE_DIR}/lemper-mirrors.sh"
+fi
+# NOTE: lemper_init_mirrors is invoked at the END of this file, after the
+# helper functions (info, run, ...) are defined.
 
 # Direct access? make as dry run mode.
 DRYRUN=${DRYRUN:-true}
@@ -335,6 +388,89 @@ function validate_fqdn() {
     fi
 }
 
+# Validate an IPv4 address (strict dotted-quad, each octet 0-255).
+function validate_ipv4() {
+    local IP=${1}
+    local octet
+
+    [[ "${IP}" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+    for octet in "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}"; do
+        # Reject leading zeros (except the single digit 0) to avoid octal ambiguity.
+        [[ "${octet}" =~ ^0[0-9]+$ ]] && return 1
+        (( 10#${octet} <= 255 )) || return 1
+    done
+    return 0
+}
+
+# Validate an IPv6 address (uses python3 when available, else a strict regex).
+function validate_ipv6() {
+    local IP=${1}
+
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "import ipaddress,sys; ipaddress.IPv6Address(sys.argv[1])" "${IP}" 2>/dev/null
+        return $?
+    fi
+
+    [[ "${IP}" =~ ^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$ ]] && return 0
+    return 1
+}
+
+# Verify a downloaded file against an expected SHA256 checksum.
+# Fails closed: any mismatch or missing input aborts the caller.
+function verify_sha256() {
+    local file="${1}"
+    local expected="${2}"
+    local actual
+
+    if [[ ! -f "${file}" || -z "${expected}" ]]; then
+        error "verify_sha256: missing file or expected checksum."
+        return 1
+    fi
+
+    actual=$(sha256sum "${file}" | awk '{print $1}')
+    if [[ "${actual}" != "${expected}" ]]; then
+        error "SHA256 mismatch for ${file}: expected ${expected}, got ${actual}."
+        return 1
+    fi
+
+    return 0
+}
+
+# Run the MariaDB/MySQL client without exposing the password in the process
+# argument list. MYSQL_PWD is visible only to the same uid via /proc, while
+# -p'secret' is visible to every local user through ps.
+function mysql_root() {
+    MYSQL_PWD="${MYSQL_ROOT_PASSWORD}" "${MYSQLCLI:-mariadb}" -u root "$@"
+}
+
+function mysql_as() {
+    local _user="${1}"
+    local _pass="${2}"
+    shift 2
+    MYSQL_PWD="${_pass}" "${MYSQLCLI:-mariadb}" -u "${_user}" "$@"
+}
+
+function mysqldump_as() {
+    local _user="${1}"
+    local _pass="${2}"
+    shift 2
+    MYSQL_PWD="${_pass}" mysqldump -u "${_user}" "$@"
+}
+
+# Validate a MySQL/MariaDB identifier (database/user name) before it is
+# interpolated into SQL. Only unquoted-safe characters are allowed.
+function validate_db_identifier() {
+    [[ "${1}" =~ ^[A-Za-z0-9_]+$ ]]
+}
+
+# Validate a DB host value: hostname, IPv4, or IPv6.
+function validate_db_host() {
+    local host="${1}"
+    [[ "${host}" =~ ^[A-Za-z0-9.-]+$ ]] && return 0
+    validate_ipv6 "${host}" && return 0
+    return 1
+}
+
 # Get general distribution name.
 function get_distrib_name() {
     if [ -f /etc/os-release ]; then
@@ -504,7 +640,13 @@ function get_ip_private() {
 function get_ip_public() {
     local SERVER_IP_PRIVATE && SERVER_IP_PRIVATE=$(get_ip_private)
     local SERVER_IP_PUBLIC && \
-    SERVER_IP_PUBLIC=$(curl -sk --ipv4 --connect-timeout 10 --retry 3 --retry-delay 0 https://ipecho.net/plain)
+    SERVER_IP_PUBLIC=$(curl -s --ipv4 --connect-timeout 10 --retry 3 --retry-delay 0 https://ipecho.net/plain)
+
+    # Fail closed: only accept a syntactically valid IPv4 address from the
+    # network. Anything else (HTML error page, injected content) is discarded.
+    if ! validate_ipv4 "${SERVER_IP_PUBLIC}"; then
+        SERVER_IP_PUBLIC=""
+    fi
 
     # Ugly hack to detect aws-lightsail public IP address.
     if [[ "${SERVER_IP_PRIVATE}" == "${SERVER_IP_PUBLIC}" ]]; then
@@ -548,7 +690,12 @@ function get_ipv6_private() {
 function get_ipv6_public() {
     local SERVER_IPV6_PRIVATE && SERVER_IPV6_PRIVATE=$(get_ipv6_private)
     local SERVER_IPV6_PUBLIC && \
-    SERVER_IPV6_PUBLIC=$(curl -sk --ipv6 --connect-timeout 10 --retry 3 --retry-delay 0 https://ipecho.net/plain)
+    SERVER_IPV6_PUBLIC=$(curl -s --ipv6 --connect-timeout 10 --retry 3 --retry-delay 0 https://ipecho.net/plain)
+
+    # Fail closed: only accept a syntactically valid IPv6 address.
+    if ! validate_ipv6 "${SERVER_IPV6_PUBLIC}"; then
+        SERVER_IPV6_PUBLIC=""
+    fi
 
     # Ugly hack to detect aws-lightsail public IP address.
     if [[ "${SERVER_IPV6_PRIVATE}" == "${SERVER_IPV6_PUBLIC}" ]]; then
@@ -591,15 +738,33 @@ function preflight_system_check() {
 
     # Set server hostname.
     if [[ -n "${SERVER_HOSTNAME}" ]]; then
-        run hostname "${SERVER_HOSTNAME}" && \
-        run bash -c "echo '${SERVER_HOSTNAME}' > /etc/hostname"
-
-        if grep -q "${SERVER_HOSTNAME}" /etc/hosts; then
-            run sed -i".bak" "/${SERVER_HOSTNAME}/d" /etc/hosts
-            run bash -c "echo -e '${SERVER_IP}\t${SERVER_HOSTNAME}' >> /etc/hosts"
-        else
-            run bash -c "echo -e '\n# LEMPer local hosts\n${SERVER_IP}\t${SERVER_HOSTNAME}' >> /etc/hosts"
+        # Validate the hostname before it touches any system file, and validate
+        # the IP as well: both values used to come from the network/.env and
+        # were interpolated into `bash -c` strings (command injection).
+        if [[ $(validate_fqdn "${SERVER_HOSTNAME}") != true ]]; then
+            fail "Invalid SERVER_HOSTNAME '${SERVER_HOSTNAME}': must be a valid FQDN."
         fi
+
+        if ! validate_ipv4 "${SERVER_IP}" && ! validate_ipv6 "${SERVER_IP}"; then
+            warning "SERVER_IP '${SERVER_IP}' is not a valid IP address, falling back to private IP."
+            SERVER_IP=$(get_ip_private)
+            [[ -z "${SERVER_IP}" ]] && SERVER_IP="127.0.0.1"
+        fi
+
+        run hostname "${SERVER_HOSTNAME}"
+        # No `bash -c` interpolation: printf feeds tee through a pipe.
+        printf '%s\n' "${SERVER_HOSTNAME}" | run tee /etc/hostname > /dev/null
+
+        # Refresh /etc/hosts with fixed-string matching only (no regex/sed
+        # interpolation of the hostname).
+        local HOSTS_TMP && HOSTS_TMP=$(mktemp)
+        if grep -qF "${SERVER_HOSTNAME}" /etc/hosts; then
+            grep -vF "${SERVER_HOSTNAME}" /etc/hosts > "${HOSTS_TMP}"
+            run cp -f "${HOSTS_TMP}" /etc/hosts
+        fi
+        rm -f "${HOSTS_TMP}"
+        printf '\n# LEMPer local hosts\n%s\t%s\n' "${SERVER_IP}" "${SERVER_HOSTNAME}" | \
+            run tee -a /etc/hosts > /dev/null
 
         export HOSTNAME && \
         HOSTNAME=${SERVER_HOSTNAME:-$(hostname)}
@@ -618,6 +783,13 @@ function preflight_system_check() {
         # Check if the hostname is pointed to server IP address.
         sleep 2
 
+        # The DNS check below needs dig, but the dependency packages are
+        # installed later; make sure it exists before relying on it.
+        if ! command -v dig >/dev/null 2>&1; then
+            echo "Installing dnsutils for the production DNS preflight check..."
+            run apt-get update -q && run apt-get install -q -y dnsutils
+        fi
+
         if [[ $(dig "${HOSTNAME}" +short) != "${SERVER_IP}" && $(dig "${HOSTNAME}" +short) != "${SERVER_IP_LOCAL}" ]]; then
             error "Your hostname '${V_DOMAIN}' doesn't appear to be currently pointed to this server's public IP address."
             echo -n "In a production environment, you'll need to add an A record pointing to this IP address "; status -n "${SERVER_IP}"; echo " !"
@@ -626,11 +798,18 @@ function preflight_system_check() {
     fi
 
     # Create a temporary directory for the LEMPer installation.
-    BUILD_DIR=${BUILD_DIR:-"/tmp/lemper_build"}
+    # Use mktemp when BUILD_DIR is unset or still a predictable default, so a
+    # local unprivileged user cannot pre-plant the directory (symlink attack).
+    case "${BUILD_DIR:-}" in
+        ""|"/tmp/lemper_build"|"/tmp/lemper")
+            BUILD_DIR=$(mktemp -d /tmp/lemper_build.XXXXXX)
+            ;;
+    esac
 
     if [ ! -d "${BUILD_DIR}" ]; then
         run mkdir -p "${BUILD_DIR}"
     fi
+    run chmod 0700 "${BUILD_DIR}"
 }
 
 # Get physical RAM size.
@@ -778,7 +957,8 @@ function create_account() {
             save_config -e "LEMPER_USERNAME=${LEMPER_USERNAME}\nLEMPER_PASSWORD=${LEMPER_PASSWORD}\nLEMPER_ADMIN_EMAIL=${LEMPER_ADMIN_EMAIL}"
 
             # Save data to log file.
-            save_log -e "Your default system account information:\nUsername: ${LEMPER_USERNAME}\nPassword: ${LEMPER_PASSWORD}"
+            # Never log the plaintext password: it lives in /etc/lemper/lemper.conf (0600, root-only).
+            save_log -e "Default system account '${LEMPER_USERNAME}' created.\nCredentials stored in /etc/lemper/lemper.conf (mode 0600, root-only)."
 
             success "Username ${LEMPER_USERNAME} created."
         else
@@ -814,6 +994,8 @@ function delete_account() {
 function init_log() {
     export LOG_FILE=${LOG_FILE:-"./lemper_install.log"}
     [ ! -f "${LOG_FILE}" ] && run touch "${LOG_FILE}"
+    # The install log may reference credentials; keep it root-only.
+    run chmod 0600 "${LOG_FILE}"
     save_log "Initialize LEMPer installation log..."
 }
 
@@ -895,3 +1077,10 @@ function footer_msg() {
 #==========================================================================#
 EOL
 }
+
+# Initialize download mirror region detection and per-source mirror URLs.
+# Runs once per process; safe no-op if the mirror lib failed to load.
+# Placed here (after all helpers) so info()/run() are available.
+if [[ "$(type -t lemper_init_mirrors)" == "function" ]]; then
+    lemper_init_mirrors
+fi

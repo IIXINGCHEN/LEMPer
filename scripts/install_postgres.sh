@@ -41,7 +41,7 @@ function add_postgres_repo() {
                 run curl -fsSL -o "${POSTGRES_REPO_KEY_PATH}" "${POSTGRES_REPO_KEY_URL}"
 
                 # Add the repository to sources list.
-                run bash -c "echo 'deb [signed-by=${POSTGRES_REPO_KEY_PATH}] https://apt.postgresql.org/pub/repos/apt ${RELEASE_NAME}-pgdg main' > ${POSTGRES_REPO_FILE}"
+                run bash -c "echo 'deb [signed-by=${POSTGRES_REPO_KEY_PATH}] ${PGDG_REPO_BASE:-https://apt.postgresql.org/pub/repos/apt} ${RELEASE_NAME}-pgdg main' > ${POSTGRES_REPO_FILE}"
 
                 # Update package lists.
                 run apt-get update -q -y
@@ -66,7 +66,7 @@ function add_postgres_repo() {
 ##
 function postgres_ctl() {
     local action="${1}"  # start, stop, restart, reload, status, enable, disable, daemon-reload
-    local version="${2:-${POSTGRES_VERSION:-17}}"
+    local version="${2:-${POSTGRES_VERSION:-18}}"
     local cluster="${3:-main}"
 
     # Handle systemd-specific actions (only work with systemctl)
@@ -132,7 +132,7 @@ function init_postgres_install() {
     export POSTGRES_DB_USER=${POSTGRES_DB_USER:-"${LEMPER_USERNAME}"}
     export POSTGRES_DB_PASS=${POSTGRES_DB_PASS:-$(openssl rand -base64 64 | tr -dc 'a-zA-Z0-9!@#%^&*' | fold -w 32 | head -n 1)}
 
-    local POSTGRES_VERSION=${POSTGRES_VERSION:-"17"}
+    local POSTGRES_VERSION=${POSTGRES_VERSION:-"18"}
     local POSTGRES_PORT=${POSTGRES_PORT:-"5432"}
     local POSTGRES_TEST_DB="${POSTGRES_DB_USER}db"
     #local PGDATA=${POSTGRES_PGDATA:-"/var/lib/postgresql/data"}
@@ -154,12 +154,18 @@ function init_postgres_install() {
         #fi
 
         # Install Postgres packages.
+        # NOTE: the standalone postgresql-contrib package was discontinued
+        # after PostgreSQL 9.6; since PG 10 the contrib modules are bundled
+        # in the server package itself.
         if [[ "${POSTGRES_VERSION}" == "latest" || "${POSTGRES_VERSION}" == "stable" ]]; then
-            POSTGRES_PKGS+=("postgresql" "postgresql-client" "postgresql-contrib" \
+            POSTGRES_PKGS+=("postgresql" "postgresql-client" \
                 "postgresql-client-common" "postgresql-common")
         else
             POSTGRES_PKGS+=("postgresql-${POSTGRES_VERSION}" "postgresql-client-${POSTGRES_VERSION}" \
-                "postgresql-contrib-${POSTGRES_VERSION}" "postgresql-client-common" "postgresql-common")
+                "postgresql-client-common" "postgresql-common")
+            if [[ "${POSTGRES_VERSION}" =~ ^[0-9]+$ ]] && [[ "${POSTGRES_VERSION}" -lt 10 ]]; then
+                POSTGRES_PKGS+=("postgresql-contrib-${POSTGRES_VERSION}")
+            fi
         fi
 
         run apt-get install -q -y "${POSTGRES_PKGS[@]}"
@@ -233,7 +239,8 @@ PGSQL
                 save_config -e "POSTGRES_SUPERUSER=${POSTGRES_SUPERUSER}\nPSQL_DB_USER=${POSTGRES_DB_USER}\nPSQL_DB_PASS=${POSTGRES_DB_PASS}\nPSQL_DB_TEST=${POSTGRES_TEST_DB}"
 
                 # Save log.
-                save_log -e "Postgres server credentials.\nPostgres default user: ${POSTGRES_SUPERUSER}, Postgres DB Username: ${POSTGRES_DB_USER}, Postgres DB Password: ${POSTGRES_DB_PASS}, Postgres DB Test: ${POSTGRES_TEST_DB}\nSave this credential and use it to authenticate your PostgreSQL test database connection."
+                # Save log (no plaintext secrets: credentials live in /etc/lemper/lemper.conf, 0600).
+                save_log -e "PostgreSQL credentials generated for superuser '${POSTGRES_SUPERUSER}' and DB user '${POSTGRES_DB_USER}' (test DB: ${POSTGRES_TEST_DB}).\nCredentials stored in /etc/lemper/lemper.conf (mode 0600, root-only)."
             else
                 info "Something went wrong with PostgreSQL server installation."
             fi
