@@ -22,21 +22,21 @@ CURRENT_DIR=$(pwd)
 
 # Include nginx modules
 # shellcheck source=scripts/nginx/nginx_common.sh
-. "${BASE_DIR}/scripts/nginx/nginx_common.sh"
+. "${BASE_DIR}/nginx/nginx_common.sh"
 # shellcheck source=scripts/nginx/nginx_repo.sh
-. "${BASE_DIR}/scripts/nginx/nginx_repo.sh"
+. "${BASE_DIR}/nginx/nginx_repo.sh"
 # shellcheck source=scripts/nginx/nginx_ssl_builders.sh
-. "${BASE_DIR}/scripts/nginx/nginx_ssl_builders.sh"
+. "${BASE_DIR}/nginx/nginx_ssl_builders.sh"
 # shellcheck source=scripts/nginx/nginx_extra_modules.sh
-. "${BASE_DIR}/scripts/nginx/nginx_extra_modules.sh"
+. "${BASE_DIR}/nginx/nginx_extra_modules.sh"
 # shellcheck source=scripts/nginx/nginx_module_config.sh
-. "${BASE_DIR}/scripts/nginx/nginx_module_config.sh"
+. "${BASE_DIR}/nginx/nginx_module_config.sh"
 # shellcheck source=scripts/nginx/nginx_post_install.sh
-. "${BASE_DIR}/scripts/nginx/nginx_post_install.sh"
+. "${BASE_DIR}/nginx/nginx_post_install.sh"
 # shellcheck source=scripts/nginx/nginx_ssl_cert.sh
-. "${BASE_DIR}/scripts/nginx/nginx_ssl_cert.sh"
+. "${BASE_DIR}/nginx/nginx_ssl_cert.sh"
 # shellcheck source=scripts/nginx/nginx_build.sh
-. "${BASE_DIR}/scripts/nginx/nginx_build.sh"
+. "${BASE_DIR}/nginx/nginx_build.sh"
 
 ##
 # Select installer method (interactive or automatic)
