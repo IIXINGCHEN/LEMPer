@@ -48,13 +48,14 @@ function load_dotenv() {
             fi
 
             # Reject values that could execute code.
+            # shellcheck disable=SC2016  # intentional: match literal '$(' / backtick in value
             if [[ "${val}" == *'$('* || "${val}" == *'`'* ]]; then
                 echo "WARNING: ignoring ${key} in ${dotenv_file}: value contains command substitution." >&2
                 continue
             fi
 
             printf -v "${key}" '%s' "${val}"
-            export "${key}"
+            export "${key?}"
         fi
     done < "${dotenv_file}"
 }

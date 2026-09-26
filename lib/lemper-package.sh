@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2317  # plugin lib: subcommands are dispatched dynamically
+# ("pkg_subcmd_${CMD}") and invoked indirectly via bin/lemper-cli.sh
 
 # +-------------------------------------------------------------------------+
 # | LEMPer CLI - Hosting Package Manager                                    |

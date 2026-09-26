@@ -470,11 +470,7 @@ function db_operations() {
         fi
 
         # Ensure mariadb / mysql command is available before performing database operations.
-        if [[ -n $(command -v mariadb) ]]; then
-            MYSQLCLI=$(command -v mariadb)
-        elif [[ -n $(command -v mysql) ]]; then
-            MYSQLCLI=$(command -v mysql)
-        else
+        if ! command -v mariadb >/dev/null 2>&1 && ! command -v mysql >/dev/null 2>&1; then
             fail "MariaDB/MySQL is required to perform database operations, but it is not available in your current stack. Please install one of them first."
         fi
 

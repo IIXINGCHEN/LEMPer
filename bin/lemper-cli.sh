@@ -61,11 +61,12 @@ if [[ -f "/etc/lemper/lemper.conf" ]]; then
         elif [[ "${_val}" == \'*\' && "${_val}" == *\' ]]; then
             _val=${_val#\'}; _val=${_val%\'}
         fi
+        # shellcheck disable=SC2016  # intentional: match literal '$(' / backtick in value
         case "${_val}" in
             *'$('*|*'`'*) continue ;;
         esac
         printf -v "${_key}" '%s' "${_val}"
-        export "${_key}"
+        export "${_key?}"
     done < /etc/lemper/lemper.conf
     unset _line _key _val
 else

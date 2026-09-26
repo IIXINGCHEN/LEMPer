@@ -158,7 +158,7 @@ EOACQ
                 fi
 
                 local BOUNCER_YAML
-                BOUNCER_YAML=$(ls /etc/crowdsec/bouncers/*firewall-bouncer*.yaml 2>/dev/null | head -n 1)
+                BOUNCER_YAML=$(find /etc/crowdsec/bouncers -maxdepth 1 -name '*firewall-bouncer*.yaml' 2>/dev/null | head -n 1)
                 if [[ -n "${BOUNCER_YAML}" ]]; then
                     run sed -i "s|^api_key:.*|api_key: ${BOUNCER_API_KEY}|" "${BOUNCER_YAML}"
                 else

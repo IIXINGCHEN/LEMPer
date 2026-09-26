@@ -97,12 +97,12 @@ function init_mongodb_install() {
         echo "Installing MongoDB server..."
 
         # Ubuntu 24.04 (Noble) uses t64 library package names.
-        local MONGODB_LIBS="libbson-1.0 libmongoc-1.0-0"
+        local -a MONGODB_LIBS=(libbson-1.0 libmongoc-1.0-0)
         if [[ "${DISTRIB_NAME}" == "ubuntu" && "${RELEASE_NAME}" == "noble" ]]; then
-            MONGODB_LIBS="libbson-1.0-0t64 libmongoc-1.0-0t64"
+            MONGODB_LIBS=(libbson-1.0-0t64 libmongoc-1.0-0t64)
         fi
 
-        run apt-get install -q -y ${MONGODB_LIBS} mongodb-org mongodb-org-server \
+        run apt-get install -q -y "${MONGODB_LIBS[@]}" mongodb-org mongodb-org-server \
             mongodb-org-shell mongodb-org-tools mongodb-org-mongos mongodb-database-tools \
             mongodb-org-database-tools-extra mongodb-mongosh
 
